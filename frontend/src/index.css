@@ -1,0 +1,66 @@
+/* ============================================================
+   DataShare 全局样式（Tailwind + 自定义动画）
+   ------------------------------------------------------------
+   视觉规范（克制透明版）：
+   - 背景底色 #F8FAFC
+   - 卡片/表格/图表全部实色 bg-white，保证数据可读
+   - z-index 层级：背景 -z-10 / 内容 z-10 / 侧边栏 z-20 /
+     Header z-30 / Modal z-50 / Toast z-[60] / 错误横幅 z-[70]
+   ============================================================ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- 内容淡入（工作台切换组件时使用） ---------- */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-fade-in { animation: fadeIn 0.3s ease-out both; }
+
+/* ---------- 错误横幅：顶部滑下 ---------- */
+@keyframes bannerIn {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+.animate-banner-in { animation: bannerIn 0.3s ease-out both; }
+
+/* ---------- 成功 Toast：底部弹起 ---------- */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-toast-in { animation: toastIn 0.25s ease-out both; }
+
+/* ---------- 首页背景线条：缓慢流动（周期 28s） ---------- */
+@keyframes lineFlow {
+  to { stroke-dashoffset: -810; }
+}
+.line-flow {
+  animation: lineFlow 28s linear infinite;
+  will-change: transform;
+}
+
+/* ---------- 设置面板：减少动画（作用于 <html>，全局即时生效） ---------- */
+.dv-reduce-motion *,
+.dv-reduce-motion *::before,
+.dv-reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* ---------- 无障碍：prefers-reduced-motion 时停止所有动画 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .line-flow,
+  .animate-fade-in,
+  .animate-banner-in,
+  .animate-toast-in {
+    animation: none !important;
+  }
+}
+
+/* ---------- 全局滚动条微调（保持简洁） ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }

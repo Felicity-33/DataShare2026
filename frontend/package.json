@@ -1,0 +1,35 @@
+{
+  "name": "datashare-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "DataShare 前端 —— 个人数据授权与收益分账 DApp 三端工作台",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check:ssr": "node ssr-check.mjs",
+    "check:jsx": "node jsx-undef-check.mjs",
+    "check:e2e": "node e2e-check.mjs",
+    "check:browser": "node browser-check.mjs http://localhost:5174/ --modules=\"/src/zk.js,/src/components/Hint.jsx,/src/components/DataPayloadView.jsx,/src/components/UserDashboard.jsx,/src/components/EnterpriseDashboard.jsx,/src/components/RegulatorDashboard.jsx,/src/components/ProofDrawer.jsx,/src/components/HelpModal.jsx\"",
+    "check:poseidon": "node poseidon-check.mjs",
+    "check": "npm run check:jsx && npm run check:ssr && npm run check:poseidon && npm run check:browser"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4",
+    "lucide-react": "^1.47.0",
+    "poseidon-lite": "^0.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.13.3",
+    "snarkjs": "^0.7.6"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "circomlibjs": "^0.1.7",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "vite": "^5.4.11"
+  }
+}

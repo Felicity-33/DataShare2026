@@ -94,7 +94,7 @@ export function useWeb3({ onRevenue, onAuthRequest, onAuthResult, onDisputeRaise
         throw err;
       }
     }
-    // ★ 关键校验（真实踩坑）：ChainID 相同 ≠ 网络正确 ——
+    // ★ 关键校验：ChainID 相同 ≠ 网络正确 ——
     //   例如 MetaMask 自带「Localhost 8545」与本项目 Ganache(7545) 的 ChainID 都是 1337，
     //   上面的 switch 会因「已在 0x539」被静默跳过，钱包实际仍挂在连不上链的 8545 上，
     //   后续所有读写全部失败，表现为连接卡死 / 数据全空。
@@ -431,9 +431,9 @@ export function useBlockNumber(provider, intervalMs = 3000) {
 
 // ★ 链上时间基准（useChainNow）
 // ------------------------------------------------------------
-// 背景（实测踩坑，务必记住）：
+// 背景：
 //   合约判定时间条件（如托管挑战期是否结束）用的是 block.timestamp，
-//   而 Ganache 在空闲时不出块 →「最新区块时间戳」会冻结在原地（实测落后真实时间 20+ 分钟）。
+//   而 Ganache 在空闲时不出块 →「最新区块时间戳」会冻结在原地（可落后真实时间 20 分钟以上）。
 //   于是同一笔托管单会出现：
 //        本地时钟     -> 已过解锁时间（可提现）
 //        最新区块时间戳 -> 还未到（不可提现）

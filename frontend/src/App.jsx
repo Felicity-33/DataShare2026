@@ -138,11 +138,10 @@ export default function App() {
     setView('workbench');
   }, [sim3]);
 
-  // ★ 链上连接统一入口（连接框「连接钱包」按钮）：
-  //   必须先把模式切回 chain 再连接 —— 若页面停留在模拟模式（如先体验过演示，
-  //   ds_mode 残留为 'sim'），只连钱包不切模式会出现「MetaMask 已连上，
-  //   但页面仍按模拟模式取状态 → connected=false → 工作台空白」的错位
-  //   （2026-10-06「点连接钱包就白屏」的真正触发器，与 enterDemo 对称成对）
+  // ★ 链上连接统一入口（连接框「连接钱包」按钮）：与 enterDemo 对称成对。
+  //   连接前必须先把模式切回 chain —— 若页面停留在模拟模式（如先体验过演示，
+  //   ds_mode 残留为 'sim'），仅连接钱包不切换模式，工作台仍按模拟模式取状态，
+  //   会出现「钱包已连接但工作台不显示」的错位
   const connectChain = useCallback(async () => {
     try { localStorage.setItem(MODE_KEY, 'chain'); } catch { /* 忽略 */ }
     setMode('chain');
@@ -174,8 +173,8 @@ export default function App() {
   // 是否处于「已注册角色的工作台」：
   // 此时灵动岛已并入工作台自身的顶部导航栏（企业工作台那种形态），
   // 首页那枚悬浮居中灵动岛必须隐藏，否则会浮在顶部正中遮挡内容
-  // ★ 必须同时要求 connected：历史上出现过「role 已回填但连接已断开」的组合态，
-  //   若只看 role 会隐藏 Header 且工作台渲染为空 → 整页只剩背景（用户眼中的"白屏"）
+  // ★ 必须同时要求 connected：role 与 connected 是相互独立的状态，
+  //   若仅以 role 判断，连接断开后会隐藏 Header 且工作台无内容，页面只剩背景
   const inRoleWorkbench = view === 'workbench' && connected && !!role && role !== 'none';
 
   // 未注册角色时的引导卡片
@@ -223,8 +222,8 @@ export default function App() {
 
   // ---------------- 工作台渲染（按角色分发） ----------------
   // key={mode}：切换模式时强制重挂载工作台，杜绝两个数据源的状态串扰
-  // ★ 空态兜底面板：任何「进了工作台却没有内容」的情况一律显示可读面板 +
-  //   状态探针文字 + 恢复按钮，绝不静默白屏（2026-10-06 白屏事故的根除措施）
+  // ★ 空态兜底面板：任何「进入工作台却无内容」的情况一律显示可读面板 +
+  //   状态文字 + 恢复按钮，保证异常状态对用户可感知、可恢复
   const WorkbenchFallback = ({ reason }) => (
     <div className="min-h-[70vh] flex items-center justify-center px-6">
       <div className="w-full max-w-md bg-white border border-slate-200 shadow-sm rounded-2xl p-8 text-center animate-fade-in">
@@ -274,7 +273,7 @@ export default function App() {
   return (
     <div
       className="min-h-screen bg-[#F8FAFC] text-slate-900"
-      // ★ 调试探针：把核心渲染状态写进 DOM，白屏时可直接从 Elements/快照读到当前分支
+      // ★ 状态探针：核心渲染状态写入 DOM，异常排查时可直接读到当前渲染分支
       data-state={`${view}/${mode}/connected=${connected}/role=${role}/acct=${account ? String(account).slice(0, 6) : 'null'}`}
     >
       {/* 背景：交互线条版（z-index: -10，不遮挡内容） */}

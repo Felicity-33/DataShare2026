@@ -141,8 +141,8 @@ let chain = null;
 // 当前「交易发起人」（msg.sender）——模拟模式下即当前演示身份
 let actor = SIM_USER_ADDRESS;
 // ★ staticCall 预演标志：预演期间不出块、不留事件通知、不持久化（配合全量快照回滚）。
-//   曾因预演真实出块+发事件且回滚不完整，事件里留下幽灵托管单，工作台刷新即报
-//   「托管单不存在」→ 弹「数据同步失败」横幅（真实事故）
+//   若预演真实出块+发事件且回滚不完整，事件里会残留幽灵托管单，
+//   工作台刷新即报「托管单不存在」→ 弹「数据同步失败」横幅
 let simulating = false;
 // 链变更订阅（useSimWeb3 的 eventsVersion 由此驱动）
 const changeSubs = new Set();
@@ -800,8 +800,8 @@ export function createSimContract() {
         // 其余写方法在合约层要求对应角色，统一在实现内校验，这里不重复拦截
       }
       // ★ ethers 同形关键：写方法调用返回「待等待交易」对象（.wait() 出回执）。
-      //   此前直接返回裸业务值，工作台 confirmTx 调 tx.wait() 抛 TypeError，
-      //   被兜底文案吞成「交易失败，请稍后重试」—— 状态实际已写入却报失败（真实事故）
+      //   若直接返回裸业务值，工作台 confirmTx 调 tx.wait() 会抛 TypeError，
+      //   被兜底文案吞成「交易失败，请稍后重试」—— 状态实际已写入却报失败
       return Promise.resolve(impl(...args)).then(({ out, hash }) => {
         const tx = makeReceipt(hash);   // { hash, blockNumber, wait }
         return {
@@ -812,8 +812,8 @@ export function createSimContract() {
       });
     };
     // staticCall：只读预演，不出块不留痕，返回值/报错形态与真实交易一致。
-    // ★ 全量深快照回滚（JSON 序列化，BigInt 走专用标记）：手写部分字段快照曾遗漏
-    //   events / blocks / txs，导致预演事件泄漏成「幽灵托管单」（真实事故，勿改回）
+    // ★ 全量深快照回滚（JSON 序列化，BigInt 走专用标记）：部分字段快照会遗漏
+    //   events / blocks / txs，导致预演事件泄漏成「幽灵托管单」，必须全量快照
     call.staticCall = async (...args) => {
       const snap = JSON.stringify(chain, _repl);
       simulating = true;

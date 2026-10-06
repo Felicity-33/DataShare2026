@@ -15,7 +15,7 @@ import { useState } from 'react';
 import { FlaskConical } from 'lucide-react';
 import { ACTIVE_NETWORK } from '../config.js';
 
-export default function ModalLogin({ web3, onEnterDemo, onClose, onConnected }) {
+export default function ModalLogin({ web3, onConnectChain, onEnterDemo, onClose, onConnected }) {
   const [busy, setBusy] = useState(false); // 连接中
   const [err, setErr] = useState('');      // 错误信息（红字展示，不用 alert）
 
@@ -26,12 +26,13 @@ export default function ModalLogin({ web3, onEnterDemo, onClose, onConnected }) 
     ? '点击下方按钮自动连接本地测试网'
     : `切换到 ${net.label}，并确保账户持有测试 ETH`;
 
-  // 点击连接钱包：调用 useWeb3 的 connect()
+  // 点击连接钱包：走 App 注入的链上连接入口（内部会先把模式切回 chain 再连接，
+  // 避免页面停留在模拟模式时出现「钱包已连上、工作台却空白」的错位）
   const handleConnect = async () => {
     setBusy(true);
     setErr('');
     try {
-      await web3.connect();
+      await (onConnectChain ? onConnectChain() : web3.connect());
       onConnected?.(); // 通知 App 跳转工作台
       onClose?.();
     } catch (e) {

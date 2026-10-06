@@ -11,6 +11,40 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // 全局错误浮层（框架无关）：任何未捕获异常直接显示在页面上，避免"静默白屏"
+      // 覆盖三类错误：模块加载失败 / 渲染与事件回调异常 / Promise 未处理的拒绝
+      (function () {
+        function showOverlay(title, detail) {
+          try {
+            var box = document.getElementById('__global_error_overlay__');
+            if (!box) {
+              box = document.createElement('div');
+              box.id = '__global_error_overlay__';
+              box.style.cssText =
+                'position:fixed;inset:auto 12px 12px 12px;z-index:99999;max-height:60vh;overflow:auto;' +
+                'background:#7f1d1d;color:#fff;padding:14px 16px;border-radius:10px;' +
+                'font:13px/1.6 Consolas,monospace;box-shadow:0 8px 24px rgba(0,0,0,.35);white-space:pre-wrap;word-break:break-all';
+              document.body.appendChild(box);
+            }
+            box.textContent = '⚠ ' + title + '\n\n' + detail;
+          } catch (e) { /* 浮层本身异常时静默，避免二次崩溃 */ }
+        }
+        window.addEventListener('error', function (ev) {
+          // 资源加载失败（脚本/样式 404）没有 error 对象内容，单独标注
+          if (ev.target && (ev.target.tagName === 'SCRIPT' || ev.target.tagName === 'LINK')) {
+            showOverlay('资源加载失败（可能是开发服务器刚重启，请 Ctrl+F5 强刷）',
+              (ev.target.src || ev.target.href || '') + '\n\n若强刷后消失则无碍；若仍出现请截图本浮层');
+            return;
+          }
+          showOverlay('未捕获异常', (ev.message || '') + '\n' + ((ev.error && ev.error.stack) || ev.filename + ':' + ev.lineno));
+        }, true);
+        window.addEventListener('unhandledrejection', function (ev) {
+          var r = ev.reason;
+          showOverlay('未处理的 Promise 异常', (r && (r.stack || r.message)) || String(r));
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

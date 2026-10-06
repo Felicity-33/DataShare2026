@@ -138,6 +138,17 @@ export default function App() {
     setView('workbench');
   }, [sim3]);
 
+  // ★ 链上连接统一入口（连接框「连接钱包」按钮）：
+  //   必须先把模式切回 chain 再连接 —— 若页面停留在模拟模式（如先体验过演示，
+  //   ds_mode 残留为 'sim'），只连钱包不切模式会出现「MetaMask 已连上，
+  //   但页面仍按模拟模式取状态 → connected=false → 工作台空白」的错位
+  //   （2026-10-06「点连接钱包就白屏」的真正触发器，与 enterDemo 对称成对）
+  const connectChain = useCallback(async () => {
+    try { localStorage.setItem(MODE_KEY, 'chain'); } catch { /* 忽略 */ }
+    setMode('chain');
+    await web3.connect();
+  }, [web3]);
+
   // ---------------- 统一导航映射 ----------------
   // home / profile 直接切视图；user / enterprise / regulator 一律进入工作台，
   // 具体渲染哪个工作台由链上角色决定
@@ -163,7 +174,9 @@ export default function App() {
   // 是否处于「已注册角色的工作台」：
   // 此时灵动岛已并入工作台自身的顶部导航栏（企业工作台那种形态），
   // 首页那枚悬浮居中灵动岛必须隐藏，否则会浮在顶部正中遮挡内容
-  const inRoleWorkbench = view === 'workbench' && !!role && role !== 'none';
+  // ★ 必须同时要求 connected：历史上出现过「role 已回填但连接已断开」的组合态，
+  //   若只看 role 会隐藏 Header 且工作台渲染为空 → 整页只剩背景（用户眼中的"白屏"）
+  const inRoleWorkbench = view === 'workbench' && connected && !!role && role !== 'none';
 
   // 未注册角色时的引导卡片
   const RoleSelectCard = () => (
@@ -210,8 +223,38 @@ export default function App() {
 
   // ---------------- 工作台渲染（按角色分发） ----------------
   // key={mode}：切换模式时强制重挂载工作台，杜绝两个数据源的状态串扰
+  // ★ 空态兜底面板：任何「进了工作台却没有内容」的情况一律显示可读面板 +
+  //   状态探针文字 + 恢复按钮，绝不静默白屏（2026-10-06 白屏事故的根除措施）
+  const WorkbenchFallback = ({ reason }) => (
+    <div className="min-h-[70vh] flex items-center justify-center px-6">
+      <div className="w-full max-w-md bg-white border border-slate-200 shadow-sm rounded-2xl p-8 text-center animate-fade-in">
+        <h2 className="text-lg font-semibold text-slate-900">工作台暂时无法显示</h2>
+        <p className="mt-2 text-sm text-slate-500">{reason}</p>
+        <p className="mt-3 text-xs font-mono text-slate-400 break-all">
+          状态：{view} / {mode} / connected={String(connected)} / role={role}
+        </p>
+        <div className="mt-6 flex gap-3 justify-center">
+          <button
+            onClick={() => setView('home')}
+            className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-blue-500 text-sm text-slate-700 transition-all"
+          >
+            返回首页
+          </button>
+          {mode === 'chain' && (
+            <button
+              onClick={() => { web3.connect().catch((e) => showNotice('error', e?.shortMessage || e?.message || '连接失败')); }}
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-sm text-white transition-all"
+            >
+              重新连接钱包
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   const renderWorkbench = () => {
-    if (!connected) return null;
+    if (!connected) return <WorkbenchFallback reason="钱包连接已断开或尚未完成，请重新连接后再进入工作台" />;
     if (role === 'none') return <RoleSelectCard />;
     const common = {
       web3: active, onNotice: showNotice, liveTick, onTx: showTx,
@@ -225,11 +268,15 @@ export default function App() {
     if (role === 'user') return <UserDashboard {...common} />;
     if (role === 'enterprise') return <EnterpriseDashboard {...common} />;
     if (role === 'regulator') return <RegulatorDashboard {...common} />;
-    return null;
+    return <WorkbenchFallback reason={`未知角色「${role}」，无法匹配对应工作台`} />;
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900">
+    <div
+      className="min-h-screen bg-[#F8FAFC] text-slate-900"
+      // ★ 调试探针：把核心渲染状态写进 DOM，白屏时可直接从 Elements/快照读到当前分支
+      data-state={`${view}/${mode}/connected=${connected}/role=${role}/acct=${account ? String(account).slice(0, 6) : 'null'}`}
+    >
       {/* 背景：交互线条版（z-index: -10，不遮挡内容） */}
       <Background />
 
@@ -263,6 +310,7 @@ export default function App() {
       {loginOpen && (
         <ModalLogin
           web3={web3}
+          onConnectChain={connectChain}
           onEnterDemo={enterDemo}
           onClose={() => setLoginOpen(false)}
           onConnected={() => setView('workbench')}

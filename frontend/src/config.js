@@ -238,12 +238,12 @@ export const fmtTime = (ts) => {
 //     所以它们确实是"外部的数据"，而不是被打进 bundle 的代码常量；
 //   - 链上只保存两样极小的东西：`dataRef`（数据在哪，即索引）与 `deliveryHash`（内容摘要，即承诺）。
 //
-// 摘要的计算方式（务必保持稳定）：
+// 摘要的计算方式（需保持稳定）：
 //   digest = keccak256(JSON.stringify(解析后的对象))
 //   取"规范化 JSON"而不是原始字节，是为了不受缩进与换行符影响 ——
 //   跨平台、经 git 检出后都不会误判；而**任何内容改动都会被检出**。
 //
-// ⚠️ 不要改成 `import data from './xxx.json'`：那会被打包进产物，就不再是"链下数据"了。
+// ⚠️ 链下数据须用 fetch 动态加载：`import` 会把数据打包进产物，失去「链下数据」属性。
 
 export const DATA_DIR = 'data';
 

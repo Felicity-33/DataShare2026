@@ -154,8 +154,8 @@ function load() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw, _rev);
-      // 版本 + 关键容器完整性双校验：旧版 / 结构残缺的数据一律重播种，
-      // 绝不让缺键数据流入运行时（曾因旧数据缺事件 ts 导致工作台同步失败横幅）
+      // 版本 + 关键容器完整性双校验：结构残缺的数据一律重播种，
+      // 保证流入运行时的数据字段完整
       const ok = parsed && parsed.version === 5
         && Array.isArray(parsed.fields) && Array.isArray(parsed.escrows)
         && Array.isArray(parsed.events) && Array.isArray(parsed.blockedAttempts)
@@ -438,7 +438,7 @@ export function createSimContract() {
     // 发起授权申请（单价由「链上标准价」决定，企业不可传入）
     async requestAuthorization(fieldId, periodType, units) {
       return withTx(() => {
-        // 合约 onlyRole(ENTERPRISE_ROLE)：非企业身份无法发起授权申请（此前遗漏，已补齐）
+        // 合约 onlyRole(ENTERPRISE_ROLE)：非企业身份无法发起授权申请
         if (chain.roles[actor] !== 'enterprise') revert('AccessControl: 账号缺少企业角色');
         const f = chain.fields[Number(fieldId)];
         if (!f) revert('字段不存在');

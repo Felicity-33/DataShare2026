@@ -33,7 +33,7 @@ import {
   saveRulingDoc, getRulingDoc, getRulingDocs,
 } from '../regulations.js';
 // ★ 通知中心（v4.6 苹果精简版）：监管端只推核心事件（新申诉待裁决 / 全网拦截汇总），
-//   点击直达功能页；裁决归档由监管本人操作产生，不再推送通知
+//   点击直达功能页；裁决归档由监管本人操作产生，不推送通知
 import {
   pushNotifications, nfDisputeRaised, nfBlockedDigest, markRead,
 } from '../notifications.js';
@@ -539,7 +539,7 @@ export default function RegulatorDashboard({ web3, onNotice, onTx, mode, onToggl
   // ============================================================
   // ★ 异常监控同步兜底（出块即刷新）：
   //   事件自动刷新依赖 MetaMask 的日志过滤器（eth_getFilterChanges），
-  //   长时间演示中过滤器可能被钱包 / 浏览器静默丢弃，导致拦截记录不再上榜、
+  //   长时间演示中过滤器可能被钱包 / 浏览器静默丢弃，导致拦截记录缺失、
   //   只能手动刷新页面。这里改用已有的区块高度轮询（3 秒）做第二通道：
   //   Ganache 空闲不出块、出块即代表发生了交易 → 强制全量刷新，
   //   不依赖事件订阅的存活，任何拦截都会在数秒内出现在异常监控。
@@ -623,7 +623,7 @@ export default function RegulatorDashboard({ web3, onNotice, onTx, mode, onToggl
   // ★ 争议裁决：只能二选一 —— 退款给企业 或 放款给数据所有者，监管无法动用资金
   const handleResolve = (escrowId, refund) => runTx(refund ? 'refund' : 'payout', async () => {
     await confirmTx(contract.resolveDispute(escrowId, refund));
-    // ★ v4.6：裁决归档由本人操作产生，不再推送归档通知 —— 这里直接闭合对应「待裁决」红点
+    // ★ 裁决归档由本人操作产生，不推送归档通知 —— 这里直接闭合对应「待裁决」红点
     markRead(account, `ruling:${escrowId}:open`);
   }, refund ? '已裁定：费用退回企业押金池' : '已裁定：费用放款给数据所有者');
 
@@ -827,7 +827,7 @@ export default function RegulatorDashboard({ web3, onNotice, onTx, mode, onToggl
       <main className={`transition-all duration-300 flex-1 min-w-0 h-[calc(100vh-2rem)] relative ${collapsed ? 'ml-20' : 'ml-72'}`}>
         <div className="flex flex-col h-full bg-white rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden relative">
 
-          {/* 顶部导航栏：左标题 + 右灵动岛组件群，随内容排布，不再悬浮遮挡 */}
+          {/* 顶部导航栏：左标题 + 右灵动岛组件群，随内容排布，避免悬浮遮挡 */}
           <Header
             variant="dashboard"
             title="监管工作台"

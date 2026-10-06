@@ -223,7 +223,7 @@ export default function UserDashboard({ web3, onNotice, onTx, mode, onToggleMode
       // ★ 通知中心同步（v4.6 苹果精简版）：只推核心第三方事件
       //   待审批申请（待办）/ 数据被申诉（紧急）/ 裁决结果（结果）；
       //   逐笔收益合并为一条汇总通报；审批结果由用户本人操作产生，
-      //   不再推送（审批动作时直接闭合对应待办红点，见 handleApprove）。
+      //   不推送（审批动作时直接闭合对应待办红点，见 handleApprove）。
       //   （重复推送按 id 去重；账户首次同步自动建立「已读基线」）
       // ============================================================
       try {
@@ -274,10 +274,9 @@ export default function UserDashboard({ web3, onNotice, onTx, mode, onToggleMode
 
   // ★ 倒计时基准必须用「链上时间」而不是本地时钟
   //   合约用 block.timestamp 判定挑战期，而 Ganache 空闲时不出块、区块时间会冻结；
-  //   用本地时钟会导致「界面已显示可提现、链上却仍判定未到期」。
-  //   （历史上这个坑表现为提现按钮一直点不动 —— 详见 useChainNow 注释）
+  //   用本地时钟会导致「界面已显示可提现、链上却仍判定未到期」（详见 useChainNow 注释）。
   //   ⚠️ 必须在下面那个 effect 之前声明：effect 的依赖数组在渲染时就要求值，
-  //      若声明在后会触发 TDZ（ReferenceError: Cannot access 'nowSec' before initialization）导致白屏。
+  //      声明在后会因 TDZ 抛出 ReferenceError。
   const nowSec = useChainNow(web3.provider, blockNumber);
 
   // ★ 倒计时归零后自动回链上复核一次
@@ -428,7 +427,7 @@ export default function UserDashboard({ web3, onNotice, onTx, mode, onToggleMode
 
   const handleApprove = (req) => runTx('approve', async () => {
     await confirmTx(contract.approveAuthorization(req.id));
-    // ★ v4.6：审批结果由本人操作产生，不再推送结果通知 —— 这里直接闭合对应「待审批」红点
+    // ★ 审批结果由本人操作产生，不推送结果通知 —— 这里直接闭合对应「待审批」红点
     markRead(account, `approval:req${req.id}:open`);
   }, '已同意授权申请').then(() => setDetail(null));
 
@@ -524,7 +523,7 @@ export default function UserDashboard({ web3, onNotice, onTx, mode, onToggleMode
       <main className={`transition-all duration-300 flex-1 min-w-0 h-[calc(100vh-2rem)] relative ${collapsed ? 'ml-20' : 'ml-72'}`}>
         <div className="flex flex-col h-full bg-white rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] overflow-hidden relative">
 
-          {/* 顶部导航栏：左标题 + 右灵动岛组件群，随内容排布，不再悬浮遮挡 */}
+          {/* 顶部导航栏：左标题 + 右灵动岛组件群，随内容排布，避免悬浮遮挡 */}
           <Header
             variant="dashboard"
             title="用户工作台"
@@ -1346,7 +1345,7 @@ function StandardPriceCell({ stdPrice }) {
   return (
     <div
       className="w-32 flex flex-col items-center justify-center gap-0.5"
-      title="单价由智能合约常量决定，企业无法传入自定义价格，从机制上杜绝乱定价"
+      title="单价由智能合约常量决定，企业无法传入自定义价格，从机制上防止乱定价"
     >
       <span className="text-[11px] font-bold text-slate-700">{stdPrice.call} <span className="font-normal text-slate-400">/ 次</span></span>
       <span className="text-[11px] font-bold text-slate-700">{stdPrice.day} <span className="font-normal text-slate-400">/ 天</span></span>

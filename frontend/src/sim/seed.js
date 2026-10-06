@@ -43,9 +43,8 @@ export function buildSeedState({ freshState, nowSec, randHash, commitmentOf, pla
     return { blockNumber: bn, transactionHash: hash };
   };
   // 追加一条历史事件（args 顺序与 mockChain.EVENT_ABI 一致）。
-  // ★ 事件先收集、不出块：真实链上「区块号」必然随时间递增，若按书写顺序出块，
-  //   证据链会出现「区块 #13 之后是 #12」这种链上不可能的情形（曾经真实存在）。
-  //   全部收集完再按时间排序出块，见文件末尾。
+  // ★ 事件先收集、不出块：链上「区块号」必须随时间单调递增，
+  //   全部收集完再按时间排序出块，保证证据链区块号递增，见文件末尾。
   const pending = [];
   const ev = (name, ts, args) => pending.push({ name, ts, args });
 
@@ -61,7 +60,7 @@ export function buildSeedState({ freshState, nowSec, randHash, commitmentOf, pla
     const ts = at(7) + i * 600;
     // ★ 链上 commitment = Poseidon(secret, owner)（与 zk.js commitmentOf / 合约 registerField 同口径）。
     //   权属密钥采用与 scripts/deploy.js 一致的确定性演示值（1000001+i），
-    //   与真实链确权写入的承诺类型完全一致，不再使用占位整数。
+    //   承诺类型与真实链确权写入完全一致。
     const commitment = BigInt(commitmentOf(1000001n + BigInt(i), USER));
     st.fields.push({
       id: i, owner: USER, name: f.name, callCount: 0,

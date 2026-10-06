@@ -11,12 +11,12 @@
 //   但若把密钥明文提交上链就等于把钥匙公开。ZK 证明让合约在不看到密钥的前提下完成校验。
 //
 // 证明产物（wasm / zkey）放在 public/zk/，由 npm run build:zk 生成。
-// 确权之后不再需要生成任何证明（申请、授权、调用都不涉及 ZK）。
+// 确权之后，申请、授权、调用均不涉及 ZK 证明生成。
 //
-// ★★ 两个必须遵守的工程约束（踩过坑，别改回去）★★
-//  1) **不要 import circomlibjs**。它依赖 Node 的 Buffer / events / util，
-//     浏览器里会抛 `ReferenceError: Buffer is not defined`；而这个文件被 App 顶层引入，
-//     一旦报错就导致**整页白屏**（React 根本挂载不了）。
+// ★★ 两个必须遵守的工程约束 ★★
+//  1) **不 import circomlibjs**。它依赖 Node 的 Buffer / events / util，
+//     浏览器里会抛 `ReferenceError: Buffer is not defined`；而本文件被 App 顶层引入，
+//     报错会导致整页无法渲染。
 //     Poseidon 改用 poseidon-lite：纯 JS、零 Node 依赖，且与 circomlibjs 结果**逐位一致**
 //     （校验脚本 frontend/poseidon-check.mjs，两者输出完全相同）。
 //  2) **snarkjs 按需动态加载**（click 时才 import）。它体积近 1MB，
@@ -77,7 +77,7 @@ async function getGroth16() {
 /// 演示模式专用：跳过 snarkjs 实时证明，直接构造与真实证明同形的演示证明。
 /// 模拟合约不执行 Groth16 验证，只校验 pubSignals[1]（owner）等于提交者 ——
 /// commitment 仍用真实 Poseidon 计算，保持「链上承诺」语义一致；pA/pB/pC 用占位值仅走流程。
-/// 好处：演示确权不再依赖 snarkjs 资源加载与 wasm 计算（近 1MB 库 + 数秒计算），
+/// 好处：演示确权免去 snarkjs 资源加载与 wasm 计算（近 1MB 库 + 数秒计算），
 /// 彻底与「交易失败」这类链上风险解耦，秒出且永不失败。
 export function makeDemoProof(secret, ownerAddress) {
   const owner = BigInt(ownerAddress);

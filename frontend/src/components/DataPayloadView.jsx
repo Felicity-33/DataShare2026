@@ -17,7 +17,7 @@
 //                 · 其余文本    → 字段名 + 值
 //   字段字典    —— 独立的三列表（字段 / 类型 / 说明），折叠在底部
 //   合规声明    —— 绿色底的合规区块
-//   「原文」视图 —— 不再内嵌渲染原件：原始数据只存链下，不提供下载，
+//   「原文」视图 —— 原始数据只存链下，不提供下载，
 //                 仅给出**指向链下原文件的直链**，新标签页在线查看。
 //
 // ★ 展示边界（有意为之）：
@@ -86,7 +86,7 @@ function RatioBar({ parts, note, unit = '%' }) {
           <span key={i} className="inline-flex items-center gap-1 text-[10px] text-slate-500">
             <span className={`w-1.5 h-1.5 rounded-full ${RATIO_COLORS[i % 3].chip}`} />
             {p.label}
-            {/* 退回数值标签时标签里已含数值，不再重复印一遍 */}
+            {/* 数值标签内已含数值，无需重复展示 */}
             {!p.numeric && (
               <span className="font-bold tabular-nums text-slate-600">{p.value}{unit}</span>
             )}

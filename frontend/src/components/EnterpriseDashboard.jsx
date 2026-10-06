@@ -34,7 +34,7 @@ const digestOfEscrow = (row) => {
 };
 import { buildAllCharts, useChainEvents, useBlockNumber, useChainNow } from '../hooks/useWeb3.js';
 // ★ 通知中心（v4.6 苹果精简版）：只推核心第三方事件（授权结果 / 拦截 / 裁决结果），
-//   点击直达功能页；发起申请 / 充值 / 提交申诉等自主操作不再产生通知
+//   点击直达功能页；发起申请 / 充值 / 提交申诉等自主操作不产生通知
 import {
   pushNotifications, nfAuthResult, nfBlocked, nfDisputeResolved,
 } from '../notifications.js';
@@ -143,7 +143,7 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx, m
   const [calls, setCalls] = useState([]);
   const [pending, setPending] = useState('');
   const [callModal, setCallModal] = useState(null);
-  const [callPeriodType, setCallPeriodType] = useState(0);  // ★ 调用周期（不再手工填价格）
+  const [callPeriodType, setCallPeriodType] = useState(0);  // ★ 调用周期（单价由合约计算）
   const [callUnits, setCallUnits] = useState(1);            // ★ 调用数量（次数 / 天数）
   const [showCallPriceNote, setShowCallPriceNote] = useState(false); // ★ 计费说明默认折叠
   const [enterpriseChart, setEnterpriseChart] = useState([]);
@@ -296,7 +296,7 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx, m
       // ============================================================
       // ★ 通知中心同步（v4.6 苹果精简版）：只推核心第三方事件
       //   授权结果（用户审批决定）/ 异常拦截（安全告警）/ 裁决结果；
-      //   发起申请 / 押金充值 / 提交申诉均为企业自主操作，不再推送通知。
+      //   发起申请 / 押金充值 / 提交申诉均为企业自主操作，不推送通知。
       //   （重复推送按 id 去重；账户首次同步自动建立「已读基线」）
       // ============================================================
       try {
@@ -520,12 +520,12 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx, m
   const callUnitPrice = Number(callPeriodType === 0 ? stdPrice.call : stdPrice.day);
   const callTotal = callUnitPrice * Number(callUnits || 0);
   // ★ 押金预检：本次扣款超过押金池余额 → 弹窗内直接拦截（红字警示 + 按钮禁用），
-  //   不再展示「扣到 0」的误导性预览，改为明确展示差额
+  //   明确展示差额
   const callDepositOk = callTotal <= Number(depositBal);
   const callDepositShort = callDepositOk ? 0 : callTotal - Number(depositBal);
   const callAfterDeposit = Math.max(0, Number(depositBal) - callTotal);
 
-  // ★ 授权范围约束：调用弹窗不再让企业自由选周期，而是沿用「已授予的授权范围」，
+  // ★ 授权范围约束：调用弹窗沿用「已授予的授权范围」，
   //   并据此限制本次数量上限 —— 从界面上就不可能超出申请时约定的额度。
   //   次数型授权（maxCalls>0）-> 只能按次；期限型授权（expiry>0）-> 只能按天。
   const lockPeriodFor = (fieldId) => {
@@ -1371,8 +1371,7 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx, m
                                   price: fmtEth(c.amount),
                                   txHash: c.txHash,
                                   deliveryHash: c.deliveryHash,
-                                  // ★ 补传链下数据引用与托管单状态：此前漏传 dataRef 导致重算必为空，
-                                  //   弹窗永远误报「与链上凭证不一致（旧版凭证格式）」；漏传状态导致资金状态恒显示「托管中」
+                                  // ★ 链下数据引用与托管单状态：存证重算与资金状态展示的必需字段
                                   dataRef: c.dataRef,
                                   refunded: c.refunded, settled: c.settled, disputed: c.disputed, confirmedAt: c.confirmedAt,
                                 })}
@@ -1553,7 +1552,7 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx, m
                 </p>
               )}
             </div>
-            {/* ★ 押金预检展示：不足时整行变红并显示差额，不再展示「扣到 0」的误导性预览 */}
+            {/* ★ 押金预检展示：不足时整行变红并显示差额 */}
             <div className={`mt-3 flex items-center justify-between px-4 py-3 rounded-2xl border ${
               callDepositOk ? 'bg-slate-50 border-slate-100' : 'bg-rose-50 border-rose-200'
             }`}>
@@ -1583,7 +1582,7 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx, m
                 className="flex-1 px-5 py-3 rounded-2xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors">
                 取消
               </button>
-              {/* ★ 确认按钮不再因押金不足 / 超次而禁用：拦截由合约执行并上链留痕（先存证再报错），
+              {/* ★ 确认按钮保持可点击：押金不足 / 超次由合约拦截并上链留痕（先存证再报错），
                   前端只在确认前给出警示文案，让「合约自动拦截」在监管端可见、可演示 */}
               <button onClick={() => handleCall(callModal.id, callPeriodType, callUnits)}
                 disabled={pending !== ''}
@@ -1800,7 +1799,7 @@ function BillingPicker({ periodType, setPeriodType, units, setUnits, stdPrice })
         />
       </div>
 
-      {/* ★ 计费金额常显，单价与说明折叠 —— 弹窗不再被大段说明占满 */}
+      {/* ★ 计费金额常显，单价与说明折叠，弹窗保持简洁 */}
       <div className="mt-5 p-4 rounded-2xl bg-slate-50 border border-slate-100">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-slate-600">总计</span>

@@ -221,7 +221,7 @@ export default function App() {
   );
 
   // ---------------- 工作台渲染（按角色分发） ----------------
-  // key={mode}：切换模式时强制重挂载工作台，杜绝两个数据源的状态串扰
+  // key={mode}：切换模式时强制重挂载工作台，避免两个数据源的状态串扰
   // ★ 空态兜底面板：任何「进入工作台却无内容」的情况一律显示可读面板 +
   //   状态文字 + 恢复按钮，保证异常状态对用户可感知、可恢复
   const WorkbenchFallback = ({ reason }) => (
@@ -257,8 +257,8 @@ export default function App() {
     if (role === 'none') return <RoleSelectCard />;
     const common = {
       web3: active, onNotice: showNotice, liveTick, onTx: showTx,
-      // ★ 合约拦截专用通道（此前漏传，导致企业端「先存证再报错」的拦截原因无处显示）：
-      //   拦截原因由合约判定（企业无法伪造），用 6 秒红横幅展示，与左下角「已上链确认 区块 #N / 交易哈希」配套，
+      // ★ 合约拦截专用通道：拦截原因由合约判定（企业无法伪造），用 6 秒红横幅展示，
+      //   与左下角「已上链确认 区块 #N / 交易哈希」配套，
       //   演示时可直接说明「错误自动留痕」。仅在链上留痕成功后触发，不影响正常调用。
       onBlocked: (reason) => showNotice('error', `合约拦截：${reason}`, 6000),
       mode, onToggleMode: toggleMode,   // 透传给工作台 Header：模式徽标 + 互切菜单项

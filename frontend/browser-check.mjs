@@ -34,7 +34,7 @@ const ROOT_ID = pick('root', 'root');
 const SETTLE_MS = Number(pick('settle', 3000));
 // --modules=/src/a.jsx,/src/b.jsx —— 逐个动态 import，验证浏览器能否加载这些模块。
 // 专治"导入期崩溃"：Node 专有 API 被打进浏览器时，模块一加载就抛错，
-// 若该模块被 App 顶层引用，整个页面直接白屏（本项目真实事故）。
+// 若该模块被 App 顶层引用，整个页面无法渲染。
 const MODULES = pick('modules', '').split(',').map((x) => x.trim()).filter(Boolean);
 const MAX_MS = Number(pick('timeout', 60000));
 

@@ -478,7 +478,7 @@ export function useChainNow(provider, blockNumber, intervalMs = 1000) {
 //     是两套实现，互不影响。
 //   - buildAllCharts(contract, account)：一次拉取并聚合出三个端共用的图表数据。
 //     修复“图表全为 0”的根因：查表统一使用完整日期键（YYYY-MM-DD），
-//     横轴展示使用 label（MM-DD），不再出现键不匹配。
+//     横轴展示使用 label（MM-DD），保证键匹配。
 // ============================================================
 
 // 拉取全部相关链上事件（分账 / 充值 / 字段上链 / 授权 / 拦截，返回原始 Log）

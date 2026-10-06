@@ -11,8 +11,9 @@
 //   三端共用同一组件保证体验一致。
 // ============================================================
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, LogOut, Copy, Bell, RefreshCw, CheckCheck, ChevronRight, Check, Inbox } from 'lucide-react';
-import { shortAddr } from '../config.js';
+import { ChevronDown, LogOut, Copy, Bell, RefreshCw, CheckCheck, ChevronRight, Check, Inbox, FlaskConical, Link2, User, Building2, Scale, LayoutDashboard } from 'lucide-react';
+import { shortAddr, ACTIVE_NETWORK } from '../config.js';
+import { SIM_IDENTITY_LABELS, SIM_IDENTITY_ORDER } from '../sim/mockChain.js';
 import {
   CATEGORIES, getNotifications, getUnreadCount,
   markRead, markAllRead, clearHistory, onNotificationsChange,
@@ -39,6 +40,10 @@ export default function Header({
   title = '工作台', // 用于工作台顶部左侧的标题
   notifyCount = 0,  // 兼容保留：未读数由通知中心按账户自动统计
   blockNumber = null, // ★ 实时区块高度（体现区块链正在出块）
+  // ★ 双模式（v4.6）：mode = 'sim'（模拟演示）| 'chain'（链上真实）
+  //   onToggleMode：两种模式互切（工作台右上角分段控件 / 账号菜单共用）
+  mode = 'chain',
+  onToggleMode,
   className = ''
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -91,6 +96,57 @@ export default function Header({
     : role === 'enterprise' ? '企业'
     : role === 'regulator' ? '监管'
     : '';
+
+  // ---------------- 双模式 UI 元素（v4.6） ----------------
+  // 模式徽标：演示模式青色烧瓶 / 链上模式紫色链接，随模式切换即时变化
+  const modeBadge = mode === 'sim' ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600 text-[10px] font-bold shrink-0" title="模拟演示模式：免钱包，数据保存在浏览器本地">
+      <FlaskConical className="w-3 h-3" /> 演示模式
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 text-violet-600 text-[10px] font-bold shrink-0" title={`链上真实模式：${ACTIVE_NETWORK.label}`}>
+      <Link2 className="w-3 h-3" /> 链上
+    </span>
+  );
+  // 模式切换菜单项：一键跳到另一模式（回首页重新进入）
+  const modeToggleItem = onToggleMode && (
+    <button onClick={() => { onToggleMode(); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+      {mode === 'sim'
+        ? <><Link2 className="w-3.5 h-3.5" strokeWidth={2} /> 切换到链上模式</>
+        : <><FlaskConical className="w-3.5 h-3.5" strokeWidth={2} /> 返回演示模式</>}
+    </button>
+  );
+  // 当前身份说明：演示模式显示身份名（更易懂），链上模式显示当前网络
+  const identityHint = mode === 'sim'
+    ? (SIM_IDENTITY_LABELS[account] || '演示身份')
+    : ACTIVE_NETWORK.label;
+
+  // ★ 演示身份选择列表（v4.6）：三身份直接点选（当前身份高亮打勾），替代盲轮换。
+  //   仅演示模式渲染；链上模式对应动作是「切换账号」（唤起 MetaMask）
+  const IDENTITY_ICONS = [User, Building2, Scale]; // 与 SIM_IDENTITY_ORDER 顺序一一对应
+  const identityPicker = mode === 'sim' && onSwitchAccount && (
+    <div className="py-1 border-b border-slate-100">
+      <div className="px-4 pt-1 pb-1 text-[10px] font-semibold text-slate-400 tracking-widest">切换演示身份</div>
+      {SIM_IDENTITY_ORDER.map((addr, i) => {
+        const isCur = addr.toLowerCase() === String(account || '').toLowerCase();
+        const Icon = IDENTITY_ICONS[i] || User;
+        return (
+          <button
+            key={addr}
+            disabled={isCur}
+            onClick={() => { onSwitchAccount(addr); setMenuOpen(false); }}
+            className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
+              isCur ? 'text-cyan-700 bg-cyan-50/60 font-medium cursor-default' : 'text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+            <span className="flex-1 text-left truncate">{(SIM_IDENTITY_LABELS[addr] || addr).split(' · ')[0]}</span>
+            {isCur && <Check className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   // ---------------- 通知中心数据（双区模型：未读当前区 / 已读历史区） ----------------
   // 列表已由通知中心按「优先级 → 时间」排好序，直接拆分渲染即可
@@ -346,36 +402,51 @@ export default function Header({
 
           <div className="relative shrink-0" ref={menuRef}>
             {!account ? (
+              // 登录入口：打开连接弹窗（弹窗内含「一键进入演示模式」兜底，模式选择收在登录流程里）
               <button onClick={onOpenLogin} className="px-5 py-1.5 rounded-full bg-slate-900 text-white text-xs font-medium transition-all hover:bg-slate-800">
                 登录 / 注册
               </button>
             ) : (
               <>
                 <button onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200/80 bg-white/70 hover:border-cyan-400 transition-all">
+                  {modeBadge}
                   <span className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center text-white text-[9px] font-bold">
                     {roleLabel?.[0] || 'U'}
                   </span>
-                  <span className="text-xs text-slate-700 font-medium">{shortAddr(account)}</span>
+                  <span className="text-xs text-slate-700 font-medium" title={identityHint}>{shortAddr(account)}</span>
                   <ChevronDown className="w-3 h-3 text-slate-400" />
                 </button>
                 {menuOpen && (
                   <div className="absolute right-0 top-full mt-3 w-52 bg-white border border-slate-200 shadow-xl rounded-2xl py-1.5 z-50">
-                    <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+                    <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between gap-2">
+                      <span className="text-xs text-slate-500 truncate" title={identityHint}>{identityHint}</span>
+                      {modeBadge}
+                    </div>
+                    <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
                       <span className="text-xs text-slate-500">当前角色</span>
                       <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600 font-medium">{roleLabel || '未注册'}</span>
                     </div>
+                    {/* ★ 进入工作台（仅首页菜单提供）：已连接用户回首页后的直达主行动 */}
+                    <button onClick={() => { onNavigate?.('workbench'); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm font-medium text-cyan-700 hover:bg-cyan-50/60">
+                      <LayoutDashboard className="w-3.5 h-3.5" strokeWidth={2} />
+                      进入工作台
+                    </button>
+                    {/* 菜单顺序（v4.6 重排）：身份操作 → 模式操作 → 账号工具 → 退出 */}
+                    {mode === 'sim' ? identityPicker : (
+                      <button onClick={() => { onSwitchAccount?.(); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                        <RefreshCw className="w-3.5 h-3.5" strokeWidth={2} />
+                        切换账号
+                      </button>
+                    )}
+                    {modeToggleItem}
                     <button onClick={copyAddress} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                       <Copy className="w-3.5 h-3.5" strokeWidth={2} />
                       <span>{copied ? '已复制' : '复制地址'}</span>
                     </button>
-                    <button onClick={() => { onSwitchAccount?.(); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                      <RefreshCw className="w-3.5 h-3.5" strokeWidth={2} />
-                      切换账号
-                    </button>
                     <div className="border-t border-slate-100 my-1" />
                     <button onClick={() => { onLogout?.(); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-500 hover:bg-red-50">
                       <LogOut className="w-3.5 h-3.5" strokeWidth={2} />
-                      断开连接
+                      {mode === 'sim' ? '退出演示' : '断开连接'}
                     </button>
                   </div>
                 )}
@@ -390,8 +461,11 @@ export default function Header({
   // 工作台模式：标准顶部导航栏（左侧标题，右侧灵动岛组件群，随内容排布、不遮挡）
   return (
     <header className={`h-20 px-8 flex items-center justify-between shrink-0 border-b border-slate-100/50 bg-white ${className}`}>
-      {/* 左侧：页面标题 */}
-      <h1 className="text-xl font-extrabold text-slate-800 tracking-tight">{title}</h1>
+      {/* 左侧：页面标题 + 模式徽标（v4.6 双模式标识） */}
+      <div className="flex items-center gap-3 min-w-0">
+        <h1 className="text-xl font-extrabold text-slate-800 tracking-tight shrink-0">{title}</h1>
+        {modeBadge}
+      </div>
 
       {/* 右侧：灵动岛组件群 */}
       <div className="flex items-center gap-3">
@@ -440,31 +514,40 @@ export default function Header({
           ) : (
             <>
               <button onClick={() => setMenuOpen((v) => !v)} className="flex items-center gap-2 px-4 py-2 rounded-full bg-slate-50 border border-slate-100 hover:border-cyan-400 transition-all">
+                {modeBadge}
                 <span className="w-5 h-5 rounded-full bg-gradient-to-br from-cyan-500 to-emerald-500 flex items-center justify-center text-white text-[10px] font-bold">
                   {roleLabel?.[0] || 'U'}
                 </span>
                 {/* 响应式压缩：md 以下只保留角色头像 + 箭头，地址悬浮 title 可见 */}
-                <span className="hidden md:inline text-sm font-medium text-slate-700" title={account}>{shortAddr(account)}</span>
+                <span className="hidden md:inline text-sm font-medium text-slate-700" title={identityHint}>{shortAddr(account)}</span>
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               </button>
               {menuOpen && (
                 <div className="absolute right-0 top-full mt-3 w-52 bg-white border border-slate-200 shadow-xl rounded-2xl py-1.5 z-50">
-                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+                  <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between gap-2">
+                    <span className="text-xs text-slate-500 truncate" title={identityHint}>{identityHint}</span>
+                    {modeBadge}
+                  </div>
+                  <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
                     <span className="text-xs text-slate-500">当前角色</span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600 font-medium">{roleLabel || '未注册'}</span>
                   </div>
+                  {/* 菜单顺序（v4.6 重排）：身份操作 → 模式操作 → 账号工具 → 退出 */}
+                  {mode === 'sim' ? identityPicker : (
+                    <button onClick={() => { onSwitchAccount?.(); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                      <RefreshCw className="w-3.5 h-3.5" strokeWidth={2} />
+                      切换账号
+                    </button>
+                  )}
+                  {modeToggleItem}
                   <button onClick={copyAddress} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
                     <Copy className="w-3.5 h-3.5" strokeWidth={2} />
                     <span>{copied ? '已复制' : '复制地址'}</span>
                   </button>
-                  <button onClick={() => { onSwitchAccount?.(); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                    <RefreshCw className="w-3.5 h-3.5" strokeWidth={2} />
-                    切换账号
-                  </button>
                   <div className="border-t border-slate-100 my-1" />
                   <button onClick={() => { onLogout?.(); setMenuOpen(false); }} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-500 hover:bg-red-50">
                     <LogOut className="w-3.5 h-3.5" strokeWidth={2} />
-                    断开连接
+                    {mode === 'sim' ? '退出演示' : '断开连接'}
                   </button>
                 </div>
               )}

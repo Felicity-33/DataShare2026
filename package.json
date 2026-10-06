@@ -1,12 +1,13 @@
 {
   "name": "datashare",
   "version": "1.0.0",
-  "description": "DataShare —— 个人数据授权与收益分账 DApp（区块链大赛参赛项目）",
+  "description": "DataShare —— 个人数据授权与收益分账 DApp（全国大学生数智链应用大赛参赛项目）",
   "scripts": {
     "start": "node start.mjs",
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy": "hardhat run scripts/deploy.js --network ganache",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "build:zk": "node scripts/build-zk.cjs",
     "test:zk": "node scripts/zk-selftest.cjs",
     "gen:abi": "node scripts/gen-abi.cjs"
@@ -16,6 +17,7 @@
     "circom2": "^0.2.23",
     "circomlib": "^2.0.5",
     "circomlibjs": "^0.1.7",
+    "dotenv": "^18.0.5",
     "ganache": "^7.9.2",
     "hardhat": "^2.22.10",
     "snarkjs": "^0.7.6"

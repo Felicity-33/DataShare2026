@@ -11,9 +11,18 @@
 // ============================================================
 import { useState, useEffect } from 'react';
 import {
-  X, Copy, Check, Wallet, Globe, Activity, RefreshCw, LogOut, ShieldCheck, Coins
+  X, Copy, Check, Wallet, Globe, Activity, RefreshCw, LogOut, ShieldCheck, Coins,
+  FlaskConical, RotateCcw, User, Building2, Scale
 } from 'lucide-react';
-import { GANACHE_CHAIN_ID, GANACHE_RPC_URL, CONTRACT_ADDRESS, EXPECTED_CONTRACT_VERSION, fmtEth } from '../config.js';
+import {
+  shortAddr, CONTRACT_ADDRESS, EXPECTED_CONTRACT_VERSION, fmtEth,
+  ACTIVE_NETWORK,
+} from '../config.js';
+import {
+  SIM_CHAIN_ID, SIM_CONTRACT_ADDRESS, SIM_IDENTITY_LABELS, SIM_IDENTITY_ORDER,
+  resetSimChain, SIM_USER_ADDRESS, SIM_ENTERPRISE_ADDRESS, SIM_REGULATOR_ADDRESS,
+} from '../sim/mockChain.js';
+import { clearNotifications } from '../notifications.js';
 
 function Row({ label, children, mono = false }) {
   return (
@@ -26,6 +35,10 @@ function Row({ label, children, mono = false }) {
 
 export default function SettingsModal({ web3, blockNumber, onClose }) {
   const { account, role, contract, networkOk, contractVersion, versionOk, switchAccount } = web3;
+  // 是否处于模拟演示模式（useSimWeb3 带 isSim 标识；链上模式的 useWeb3 无此字段）
+  const isSim = Boolean(web3.isSim);
+  // 演示模式 = ACTIVE_NETWORK（Ganache / Sepolia）两套网络信息
+  const net = ACTIVE_NETWORK;
 
   const [copied, setCopied] = useState('');
   const [params, setParams] = useState({ challenge: null, call: null, day: null });
@@ -110,38 +123,117 @@ export default function SettingsModal({ web3, blockNumber, onClose }) {
               <p className="mt-2 text-xs text-red-500 leading-relaxed">
                 链上合约版本为 <code className="font-mono">{contractVersion || '未知'}</code>，
                 前端期望 <code className="font-mono">{EXPECTED_CONTRACT_VERSION}</code>。
-                请重新执行 <code className="font-mono">npx hardhat run scripts/deploy.js --network ganache</code>，
-                并把新地址填回 <code className="font-mono">frontend/src/config.js</code>。
+                {net.key === 'ganache'
+                  ? <>请重新执行 <code className="font-mono">npx hardhat run scripts/deploy.js --network ganache</code>，并把新地址填回 <code className="font-mono">frontend/src/config.js</code>。</>
+                  : <>请把 <code className="font-mono">VITE_SEPOLIA_CONTRACT_ADDRESS</code> 更新为最新部署地址并重新构建。</>}
                 否则返回值可能被静默错解，界面看起来正常但数据是错的。
               </p>
             </div>
           )}
 
-          {/* ---------- 1. 链上状态 ---------- */}
+          {/* ---------- 1. 链上状态（模拟 / 链上两套展示） ---------- */}
           <section>
             <div className="flex items-center gap-2 mb-2">
               <Globe className="w-4 h-4 text-slate-400" />
-              <h4 className="text-sm font-bold text-slate-800">链上状态</h4>
+              <h4 className="text-sm font-bold text-slate-800">{isSim ? '运行环境' : '链上状态'}</h4>
             </div>
             <div className="px-4 rounded-2xl bg-slate-50/70 border border-slate-100">
-              <Row label="网络">
-                <span className={networkOk ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'}>
-                  {networkOk ? 'Ganache 本地测试网（已匹配）' : '网络不匹配，请切换到 ChainID 1337'}
-                </span>
-              </Row>
-              <Row label="ChainID" mono>{GANACHE_CHAIN_ID}</Row>
-              <Row label="RPC 地址" mono>{GANACHE_RPC_URL}</Row>
-              <Row label="实时区块高度">
-                <span className="inline-flex items-center gap-2">
-                  <span className="relative flex w-1.5 h-1.5">
-                    <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
-                    <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  </span>
-                  <span className="font-mono font-bold text-slate-800">#{blockNumber ?? '—'}</span>
-                </span>
-              </Row>
+              {isSim ? (
+                <>
+                  <Row label="运行模式">
+                    <span className="inline-flex items-center gap-1.5 text-cyan-600 font-medium">
+                      <FlaskConical className="w-3.5 h-3.5" />
+                      模拟演示模式（免钱包）
+                    </span>
+                  </Row>
+                  <Row label="模拟链标识" mono>ChainID {SIM_CHAIN_ID}（仅展示）</Row>
+                  <Row label="链环境" mono>浏览器内模拟链 · 数据不出网</Row>
+                  <Row label="数据存储" mono>localStorage（刷新后保留）</Row>
+                  <Row label="实时区块高度">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="relative flex w-1.5 h-1.5">
+                        <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+                        <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      </span>
+                      <span className="font-mono font-bold text-slate-800">#{blockNumber ?? '—'}</span>
+                    </span>
+                  </Row>
+                </>
+              ) : (
+                <>
+                  <Row label="目标网络">
+                    <span className={networkOk ? 'text-emerald-600 font-medium' : 'text-red-500 font-medium'}>
+                      {networkOk ? `${net.label}（已匹配）` : `网络不匹配，请切换到 ChainID ${net.chainId}`}
+                    </span>
+                  </Row>
+                  <Row label="ChainID" mono>{net.chainId}</Row>
+                  <Row label="RPC 地址" mono>{net.rpcUrl || '钱包内置公共 RPC'}</Row>
+                  <Row label="实时区块高度">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="relative flex w-1.5 h-1.5">
+                        <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+                        <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      </span>
+                      <span className="font-mono font-bold text-slate-800">#{blockNumber ?? '—'}</span>
+                    </span>
+                  </Row>
+                </>
+              )}
             </div>
           </section>
+
+          {/* ---------- 1.5 演示身份（仅模拟模式）：一键切换三端视角 ---------- */}
+          {isSim && (
+            <section>
+              <div className="flex items-center gap-2 mb-2">
+                <FlaskConical className="w-4 h-4 text-cyan-500" />
+                <h4 className="text-sm font-bold text-slate-800">演示身份</h4>
+              </div>
+              <div className="space-y-2">
+                {SIM_IDENTITY_ORDER.map((addr) => {
+                  const cur = account?.toLowerCase() === addr.toLowerCase();
+                  const Icon = addr === SIM_IDENTITY_ORDER[0] ? User
+                    : addr === SIM_IDENTITY_ORDER[1] ? Building2 : Scale;
+                  return (
+                    <button
+                      key={addr}
+                      onClick={() => switchAccount(addr)}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border text-left transition-all ${
+                        cur
+                          ? 'border-cyan-400 bg-cyan-50/70 shadow-sm'
+                          : 'border-slate-100 bg-slate-50/70 hover:border-cyan-200'
+                      }`}
+                    >
+                      <span className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                        cur ? 'bg-cyan-500 text-white' : 'bg-white text-slate-400 border border-slate-200'
+                      }`}>
+                        <Icon className="w-4 h-4" />
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-xs font-bold text-slate-800">{SIM_IDENTITY_LABELS[addr]}</span>
+                        <span className="block text-[10px] font-mono text-slate-400 mt-0.5">{shortAddr(addr)}</span>
+                      </span>
+                      {cur && <span className="shrink-0 text-[10px] font-bold text-cyan-600">当前</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* 重置演示数据：清空 localStorage 模拟链并重新播种（整页刷新生效）；
+                  同步清空三个演示身份的铃铛通知存档 —— 否则旧通知与新演示数据对不上，
+                  看起来就像「通知不同步」 */}
+              <button
+                onClick={async () => {
+                  [SIM_USER_ADDRESS, SIM_ENTERPRISE_ADDRESS, SIM_REGULATOR_ADDRESS]
+                    .forEach((a) => clearNotifications(a));
+                  await resetSimChain();
+                  window.location.reload();
+                }}
+                className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-500 text-xs font-bold hover:bg-slate-50 transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> 重置演示数据（恢复初始播种状态）
+              </button>
+            </section>
+          )}
 
           {/* ---------- 2. 合约信息 ---------- */}
           <section>
@@ -161,8 +253,12 @@ export default function SettingsModal({ web3, blockNumber, onClose }) {
               </Row>
               <Row label="合约地址">
                 <span className="inline-flex items-center gap-1">
-                  <span className="font-mono text-[11px]">{CONTRACT_ADDRESS.slice(0, 12)}…{CONTRACT_ADDRESS.slice(-8)}</span>
-                  <CopyBtn text={CONTRACT_ADDRESS} tag="addr" />
+                  <span className="font-mono text-[11px]">
+                    {isSim
+                      ? `${SIM_CONTRACT_ADDRESS.slice(0, 12)}…${SIM_CONTRACT_ADDRESS.slice(-8)}`
+                      : (CONTRACT_ADDRESS ? `${CONTRACT_ADDRESS.slice(0, 12)}…${CONTRACT_ADDRESS.slice(-8)}` : '未配置')}
+                  </span>
+                  {(!isSim && CONTRACT_ADDRESS) && <CopyBtn text={CONTRACT_ADDRESS} tag="addr" />}
                 </span>
               </Row>
               <Row label="托管争议窗口">
@@ -228,10 +324,15 @@ export default function SettingsModal({ web3, blockNumber, onClose }) {
                 onClick={switchAccount}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white border border-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-50 transition-colors"
               >
-                <RefreshCw className="w-4 h-4" /> 切换账号
+                <RefreshCw className="w-4 h-4" /> {isSim ? '切换演示身份' : '切换账号'}
               </button>
               <button
                 onClick={async () => {
+                  // 模拟模式：无钱包授权可撤销，直接刷新重建界面状态
+                  if (isSim) {
+                    window.location.reload();
+                    return;
+                  }
                   try {
                     if (window.ethereum) {
                       await window.ethereum.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] });
@@ -241,7 +342,7 @@ export default function SettingsModal({ web3, blockNumber, onClose }) {
                 }}
                 className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white border border-red-200 text-red-500 text-sm font-bold hover:bg-red-50 transition-colors"
               >
-                <LogOut className="w-4 h-4" /> 断开连接
+                <LogOut className="w-4 h-4" /> {isSim ? '退出演示' : '断开连接'}
               </button>
             </div>
           </section>

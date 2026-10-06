@@ -65,7 +65,11 @@ async function ganacheAlive() {
 function readFrontendConfig() {
   const p = path.join(FRONTEND, 'src', 'config.js');
   const s = fs.readFileSync(p, 'utf8');
-  const addr = s.match(/CONTRACT_ADDRESS\s*=\s*'([^']+)'/)?.[1];
+  // ★ config.js 已改造为「双网络参数化」结构：合约地址不再是顶层的字面量
+  //   `export const CONTRACT_ADDRESS = '0x...'`，而是 NETWORKS.ganache.contractAddress
+  //   （CONTRACT_ADDRESS 改为由 ACTIVE_NETWORK 派生）。
+  //   本地启动脚本固定校验 ganache 这一套，故此处定位 ganache 块内的地址字面量。
+  const addr = s.match(/ganache:\s*\{[\s\S]*?contractAddress:\s*'([^']+)'/)?.[1];
   const ver = s.match(/EXPECTED_CONTRACT_VERSION\s*=\s*'([^']+)'/)?.[1];
   return { addr, ver };
 }
@@ -132,13 +136,20 @@ async function main() {
 
   // ---------- ② 校验前端指向的合约 ----------
   const { addr, ver } = readFrontendConfig();
-  log(`② 前端配置：合约 ${addr}（期望版本 ${ver}）`);
+  log(`② 前端配置：合约 ${addr || '未解析到'}（期望版本 ${ver}）`);
+  // 解析失败时立即给出可读原因，避免把 undefined 传给 ethers 抛出一长串底层报错
+  if (!addr) {
+    log('   ❌ 未能从 frontend/src/config.js 解析出 Ganache 合约地址。');
+    log('      请检查 NETWORKS.ganache.contractAddress 是否为 \'0x...\' 字面量；');
+    log('      若刚重新部署过合约，请把新地址填入该字段后重启。');
+    process.exit(1);
+  }
   const onChainVer = await checkContractOnChain(addr);
   if (onChainVer === null) {
     log('   ⚠️  当前链上找不到这个合约 —— 通常是 Ganache 被重置过（换链了）。');
     log('      请先重新部署并更新前端地址：');
     log('        1) npm run deploy');
-    log('        2) 把输出里的合约地址填到 frontend/src/config.js 的 CONTRACT_ADDRESS');
+    log('        2) 把输出里的合约地址填到 frontend/src/config.js 的 NETWORKS.ganache.contractAddress');
     log('      界面仍会打开，但读不到数据。');
   } else if (onChainVer !== ver) {
     log(`   ⚠️  版本不一致：链上是 ${onChainVer}，前端期望 ${ver} —— ABI 可能对不上，界面会异常。`);

@@ -7,11 +7,21 @@
 // 报告全部来自链上只读查询，不含任何原始个人数据。
 // ============================================================
 import {
-  GANACHE_CHAIN_ID, GANACHE_RPC_URL, CONTRACT_ADDRESS,
+  ACTIVE_NETWORK, CONTRACT_ADDRESS,
   EXPECTED_CONTRACT_VERSION, shortAddr, fmtEth, fmtTime
 } from './config.js';
 // ★ 裁决说明书并档导出（v4.5）：依据库映射 + 模拟引用统一声明
 import { LEGAL_NOTICE, REGULATION_MAP } from './regulations.js';
+
+// 报告默认链环境（链上模式）：与实际连接的 ACTIVE_NETWORK 一致。
+// 模拟模式由调用方传入 network 覆盖（演示模拟链 / 模拟合约地址），
+// 避免审计报告在两种模式下显示成同一条链（那会让报告失去可信度）。
+const DEFAULT_NETWORK_INFO = {
+  label: ACTIVE_NETWORK.label,
+  chainId: ACTIVE_NETWORK.chainId,
+  rpcUrl: ACTIVE_NETWORK.rpcUrl || '—',
+  contractAddress: CONTRACT_ADDRESS,
+};
 
 // ============================================================
 // 裁决说明书 → Markdown 片段（随「四、争议与裁决记录」并档导出）
@@ -56,7 +66,9 @@ export function buildAuditReportMarkdown(data) {
     chainInfo = {}, stats = {}, settlement = {}, escrows = [],
     disputes = [], alerts = [], auditLogs = [], reputation = [],
     rulingDocs = {}, // ★ 已存档裁决说明书（v4.5）
+    network = null,  // ★ 链环境（模拟模式下由调用方覆盖）
   } = data;
+  const net = { ...DEFAULT_NETWORK_INFO, ...(network || {}) };
 
   const now = new Date();
   const lines = [];
@@ -75,9 +87,9 @@ export function buildAuditReportMarkdown(data) {
   // 一、链环境与合约信息
   H('一、链环境与合约信息');
   table(['项目', '值'], [
-    ['网络', `Ganache 本地测试网（ChainID ${GANACHE_CHAIN_ID}）`],
-    ['RPC 地址', GANACHE_RPC_URL],
-    ['合约地址', CONTRACT_ADDRESS],
+    ['网络', `${net.label}（ChainID ${net.chainId}）`],
+    ['RPC 地址', net.rpcUrl],
+    ['合约地址', net.contractAddress],
     ['合约版本', `${chainInfo.contractVersion || '未知'}（前端期望 ${EXPECTED_CONTRACT_VERSION}）`],
     ['版本校验', chainInfo.versionOk ? '通过' : '**不通过（需重新部署）**'],
     ['当前区块高度', chainInfo.blockNumber ?? '—'],
@@ -185,7 +197,7 @@ export function buildAuditReportMarkdown(data) {
   lines.push('');
   lines.push('---');
   lines.push('');
-  lines.push(`*报告由链承共予 · DataShare 监管工作台自动生成 · 合约 ${CONTRACT_ADDRESS}*`);
+  lines.push(`*报告由链承共予 · DataShare 监管工作台自动生成 · 合约 ${net.contractAddress}*`);
 
   return lines.join('\n');
 }
@@ -343,7 +355,9 @@ export function buildAuditReportHTML(data) {
     chainInfo = {}, stats = {}, settlement = {}, escrows = [],
     disputes = [], alerts = [], auditLogs = [], reputation = [],
     rulingDocs = {}, // ★ 已存档裁决说明书（v4.5）
+    network = null,  // ★ 链环境（模拟模式下由调用方覆盖）
   } = data;
+  const net = { ...DEFAULT_NETWORK_INFO, ...(network || {}) };
 
   const now = new Date();
   const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -632,7 +646,7 @@ export function buildAuditReportHTML(data) {
       <span>生成时间 <b>${esc(now.toLocaleString('zh-CN', { hour12: false }))}</b></span>
       <span>合约版本 <b>${esc(chainInfo.contractVersion || '未知')}</b></span>
       <span>区块高度 <b>${esc(chainInfo.blockNumber ?? '—')}</b></span>
-      <span>合约 <b>${esc(CONTRACT_ADDRESS)}</b></span>
+      <span>合约 <b>${esc(net.contractAddress)}</b></span>
     </div>
   </div>
 
@@ -673,9 +687,9 @@ export function buildAuditReportHTML(data) {
     <h2>一、链环境与合约信息</h2>
     <div class="tbl-wrap"><table class="kv"><tbody>
       ${[
-        ['网络', `Ganache 本地测试网（ChainID ${esc(GANACHE_CHAIN_ID)}）`],
-        ['RPC 地址', `<span class="mono">${esc(GANACHE_RPC_URL)}</span>`],
-        ['合约地址', `<span class="mono">${esc(CONTRACT_ADDRESS)}</span>`],
+        ['网络', `${esc(net.label)}（ChainID ${esc(net.chainId)}）`],
+        ['RPC 地址', `<span class="mono">${esc(net.rpcUrl)}</span>`],
+        ['合约地址', `<span class="mono">${esc(net.contractAddress)}</span>`],
         ['合约版本', `${esc(chainInfo.contractVersion || '未知')}（前端期望 ${esc(EXPECTED_CONTRACT_VERSION)}）`],
         ['版本校验', chainInfo.versionOk ? '<span class="tag ok">通过</span>'
           : '<span class="tag bad">不通过（需重新部署）</span>'],
@@ -727,7 +741,7 @@ export function buildAuditReportHTML(data) {
   </section>
 
   <footer>
-    报告由链承共予 · DataShare 监管工作台自动生成 · 合约 <span class="mono">${esc(CONTRACT_ADDRESS)}</span>
+    报告由链承共予 · DataShare 监管工作台自动生成 · 合约 <span class="mono">${esc(net.contractAddress)}</span>
   </footer>
 </div>
 </body>

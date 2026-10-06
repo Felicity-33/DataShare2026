@@ -12,13 +12,41 @@
 // ============================================================
 import { ethers } from 'ethers';
 
-// ---------------- 链与合约配置 ----------------
-export const GANACHE_CHAIN_ID = 1337;                                // Ganache ChainID
-export const GANACHE_RPC_URL = 'http://127.0.0.1:7545';              // Ganache RPC 地址
+// ---------------- 链与合约配置（双网络参数化） ----------------
+// ★ 本项目支持两种链上部署目标，通过环境变量 VITE_CHAIN_TARGET 切换：
+//   - ganache（默认）：本地开发 / 现场演示，连接 127.0.0.1:7545；
+//   - sepolia：线上评审场景，合约部署在 Sepolia 测试网（地址见 VITE_SEPOLIA_CONTRACT_ADDRESS）。
+// 切换方式：frontend/.env 里写入 VITE_CHAIN_TARGET=sepolia 后重新构建。
+export const NETWORKS = {
+  ganache: {
+    key: 'ganache',
+    label: 'Ganache 本地测试网',
+    chainId: 1337,
+    hexChainId: '0x539',
+    rpcUrl: 'http://127.0.0.1:7545',
+    // v4.4「争议窗口 600 秒」版，部署时间 2026-09-23；本地重新部署后需同步更新
+    contractAddress: '0xFDE792d0837298Df423Bc7a0cb8cC596804c253B',
+  },
+  sepolia: {
+    key: 'sepolia',
+    label: 'Sepolia 测试网',
+    chainId: 11155111,
+    hexChainId: '0xaa36a7',
+    rpcUrl: '', // Sepolia 使用钱包内置公共 RPC，无需手动指定
+    // 阶段二部署后填写 .env 的 VITE_SEPOLIA_CONTRACT_ADDRESS
+    contractAddress: import.meta.env.VITE_SEPOLIA_CONTRACT_ADDRESS || '',
+  },
+};
 
-// ★★★ 当前 Ganache 网络已部署合约地址（每次重新部署后都需要更新） ★★★
-// v4.4「争议窗口 600 秒」版，部署时间 2026-09-23
-export const CONTRACT_ADDRESS = '0xFDE792d0837298Df423Bc7a0cb8cC596804c253B';
+// 当前生效的链上网络（构建期决定；非法值回退 ganache，保证本地开发永不中断）
+const _target = import.meta.env.VITE_CHAIN_TARGET || 'ganache';
+export const ACTIVE_NETWORK = NETWORKS[_target] || NETWORKS.ganache;
+
+// ---- 以下三个常量保留原名导出（历史代码引用点较多），取值统一由 ACTIVE_NETWORK 派生 ----
+export const GANACHE_CHAIN_ID = NETWORKS.ganache.chainId;               // 兼容旧引用：本地 ChainID
+export const GANACHE_RPC_URL = NETWORKS.ganache.rpcUrl;                 // 兼容旧引用：本地 RPC 地址
+// 当前网络的合约地址（链上模式下前端与合约交互的唯一入口，单一来源）
+export const CONTRACT_ADDRESS = ACTIVE_NETWORK.contractAddress;
 
 /// 让本地开发链的时钟追上真实时间（仅用于本地 Ganache；其他网络静默跳过）。
 ///
@@ -37,8 +65,10 @@ export const CONTRACT_ADDRESS = '0xFDE792d0837298Df423Bc7a0cb8cC596804c253B';
 let _localRpc = null;
 
 export async function syncChainClock() {
+  // 仅本地 Ganache 需要（Sepolia 由验证者出块，时间戳永远新鲜）
+  if (ACTIVE_NETWORK.key !== 'ganache') return false;
   try {
-    if (!_localRpc) _localRpc = new ethers.JsonRpcProvider(GANACHE_RPC_URL);
+    if (!_localRpc) _localRpc = new ethers.JsonRpcProvider(NETWORKS.ganache.rpcUrl);
     await _localRpc.send('evm_mine', []);
     return true;
   } catch {
@@ -217,10 +247,19 @@ export const fmtTime = (ts) => {
 
 export const DATA_DIR = 'data';
 
+// ★ 部署基路径：必须拼在链下数据文件地址之前。
+//   生产构建若部署到 git 子目录（如 gh-pages 的 /DataShare2026/），
+//   `import.meta.env.BASE_URL` 就是 '/DataShare2026/'；本地开发为 '/'。
+//   若这里用绝对根路径 `/data/xxx.json`，子目录部署下 fetch 会打到站点根目录而全部 404，
+//   进而数据缓存为空 → buildDeliveryHash 返回空 → 企业端【直接调用】在预检阶段就被判
+//   「该字段未关联链下数据文件」，根本走不到合约。zk.js 的证明产物路径同理，两者保持一致。
+const _BASE = import.meta.env.BASE_URL || '/';
+const _BASE_DIR = _BASE.endsWith('/') ? _BASE : `${_BASE}/`;
+
 /// 数据文件的访问地址（链下存储的定位符，用于打开原始文件）
 export const dataFileUrl = (dataRef) => {
   const ref = String(dataRef || '').trim();
-  return ref ? `/${DATA_DIR}/${encodeURIComponent(ref)}.json` : '';
+  return ref ? `${_BASE_DIR}${DATA_DIR}/${encodeURIComponent(ref)}.json` : '';
 };
 
 // 运行时缓存：预加载一次，之后同步读取（筛选 / AI 匹配 / 调用都是同步逻辑）
@@ -332,6 +371,11 @@ export const parseTxError = (err, fallback = '交易失败，请稍后重试') =
   if (err.reason && typeof err.reason === 'string' && err.reason.trim() && !isRawEnglishError(err.reason)) {
     return err.reason.trim();
   }
+  // ★ 本地抛出的普通 Error（如 ZK 证明生成失败的「证明库加载失败…」）：
+  //   中文 message 直接展示 —— 不加这一步会被最后的兜底文案吞成"交易失败，请稍后重试"
+  if (typeof err.message === 'string' && err.message.trim() && !isRawEnglishError(err.message)) {
+    return err.message.trim();
+  }
   const raw = err.shortMessage || err.message || '';
 
   // 在任意一段文本里找 revert 原因（合约的中文 require 文案）
@@ -367,12 +411,17 @@ export const parseTxError = (err, fallback = '交易失败，请稍后重试') =
     return '合约预判这笔交易会被拒绝（条件尚未满足或额度不足），交易未发出';
   }
 
-  // ★ 网络 / 环境类错误：按场景给出可操作的排查指引（统一异常处理流程的一部分）
+  // ★ 网络 / 环境类错误：按场景给出可操作的排查指引（统一异常处理流程的一部分）。
+  //   文案按当前网络参数化：本地 Ganache 提示启动本地节点；Sepolia 提示检查钱包网络。
   if (/Failed to fetch|ECONNREFUSED|network error|fetch failed|Invalid JSON RPC response|onchainconnect/i.test(all)) {
-    return '无法连接区块链节点：请确认 Ganache 正在 7545 端口运行，且 MetaMask 网络指向 http://127.0.0.1:7545（ChainID 1337）';
+    return ACTIVE_NETWORK.key === 'ganache'
+      ? `无法连接区块链节点：请确认 Ganache 正在 7545 端口运行，且 MetaMask 网络指向 ${NETWORKS.ganache.rpcUrl}（ChainID ${NETWORKS.ganache.chainId}）`
+      : `无法连接 ${ACTIVE_NETWORK.label}：请检查钱包网络是否已切换到 ${ACTIVE_NETWORK.label}（ChainID ${ACTIVE_NETWORK.chainId}），并确认浏览器可访问外网`;
   }
   if (/insufficient (funds|balance)/i.test(all)) {
-    return '账户 ETH 余额不足以支付 Gas：请在 Ganache 中向当前账户转入测试 ETH';
+    return ACTIVE_NETWORK.key === 'ganache'
+      ? '账户 ETH 余额不足以支付 Gas：请在 Ganache 中向当前账户转入测试 ETH'
+      : `账户测试 ETH 余额不足以支付 Gas：请通过 Sepolia 水龙头领取测试币后重试`;
   }
   if (/nonce|already known|replacement transaction underpriced/i.test(all)) {
     return '交易重复或顺序冲突：请稍候 2 秒再试（上一笔可能仍在处理中）';

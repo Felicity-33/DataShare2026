@@ -24,8 +24,11 @@
 // ============================================================
 import { poseidon2 } from 'poseidon-lite';
 
-const WASM_URL = '/zk/dataOwnership.wasm';
-const ZKEY_URL = '/zk/dataOwnership.zkey';
+// 证明产物路径：必须拼在 BASE_URL 之后 ——
+// 线上按子路径部署（如 /DataShare2026/）时，绝对根路径 /zk/... 会 404 导致确权失败
+const BASE = import.meta.env.BASE_URL || '/';
+const WASM_URL = `${BASE}zk/dataOwnership.wasm`;
+const ZKEY_URL = `${BASE}zk/dataOwnership.zkey`;
 const SECRET_PREFIX = 'datashare.zk.secret.';
 
 /// 计算权属承诺：Poseidon(secret, owner)
@@ -69,6 +72,23 @@ async function getGroth16() {
     }
   }
   return groth16Promise;
+}
+
+/// 演示模式专用：跳过 snarkjs 实时证明，直接构造与真实证明同形的演示证明。
+/// 模拟合约不执行 Groth16 验证，只校验 pubSignals[1]（owner）等于提交者 ——
+/// commitment 仍用真实 Poseidon 计算，保持「链上承诺」语义一致；pA/pB/pC 用占位值仅走流程。
+/// 好处：演示确权不再依赖 snarkjs 资源加载与 wasm 计算（近 1MB 库 + 数秒计算），
+/// 彻底与「交易失败」这类链上风险解耦，秒出且永不失败。
+export function makeDemoProof(secret, ownerAddress) {
+  const owner = BigInt(ownerAddress);
+  const commitment = commitmentOf(secret, owner);
+  return {
+    commitment,
+    pA: [[1n, 2n], [3n, 4n]],
+    pB: [[[1n, 2n], [3n, 4n]], [[5n, 6n], [7n, 8n]]],
+    pC: [9n, 10n],
+    pubSignals: [commitment.toString(), owner.toString()],
+  };
 }
 
 /// 生成一份可直接喂给合约 registerField 的 Groth16 证明

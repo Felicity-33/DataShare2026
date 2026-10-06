@@ -23,7 +23,7 @@ import {
 import { ethers } from 'ethers';
 import {
   shortAddr, shortHash, fmtEth, fmtTime, fmtCountdown, parseTxError, emitGlobalError,
-  buildDeliveryHash, getDataPayload, dataFileUrl, loadAllData, hashPayload, syncChainClock,
+  buildDeliveryHash, getDataPayload, dataFileUrl, loadAllData, hashPayload, syncChainClock, ACTIVE_NETWORK,
 } from '../config.js';
 import { requestIntent, recommendFields, AI_DISCLAIMER } from '../ai.js';
 
@@ -125,7 +125,7 @@ function DateTimePicker({ value, onChange }) {
   );
 }
 
-export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx }) {
+export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx, mode, onToggleMode }) {
   const { contract, account } = web3;
 
   const [tab, setTab] = useState('dashboard');
@@ -348,8 +348,10 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx })
       }
     } catch (e) {
       console.error('加载企业数据失败', e);
-      // ★ 同步失败不能静默——进入全局异常通道，避免用户误以为数据没上链
-      emitGlobalError('企业数据同步失败：请确认 Ganache（7545）与 MetaMask 网络正常后刷新页面');
+      // ★ 同步失败不能静默——进入全局异常通道；文案按运行模式分支（模拟模式不提 Ganache）
+      emitGlobalError(web3.isSim
+        ? '演示数据同步失败：请刷新页面恢复；若仍异常，请在右上角设置中重置演示数据'
+        : `企业数据同步失败：请确认钱包已连接 ${ACTIVE_NETWORK.label}（本地演示需 Ganache 在 7545 端口运行）后刷新页面`);
     }
   }, [contract, account]);
 
@@ -689,6 +691,7 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx })
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenHelp={() => setHelpOpen(true)}
         blockNumber={blockNumber}
+        isSim={web3.isSim}
         contractVersion={web3.contractVersion}
         versionOk={web3.versionOk}
         onLogout={() => {
@@ -712,9 +715,13 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx })
             role="enterprise"
             variant="dashboard"
             title="企业工作台"
+            mode={mode}
+            onToggleMode={onToggleMode}
             onOpenLogin={() => {}}
             blockNumber={blockNumber}
-            onSwitchAccount={async () => {
+            onSwitchAccount={async (targetAddr) => {
+              // 演示模式：直接切换到指定内置身份（下拉列表点选）；无参时轮换下一个
+              if (web3.isSim) { await web3.switchAccount(targetAddr); return; }
               if (!window.ethereum) return;
               try {
                 await window.ethereum.request({
@@ -732,6 +739,8 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx })
               } catch (e) { console.error('切换账号失败', e); }
             }}
             onLogout={() => {
+              // 演示模式：直接断开模拟连接并刷新（刷新后回到首页未登录态）
+              if (web3.isSim) { web3.disconnect(); window.location.reload(); return; }
               if (window.ethereum) {
                 window.ethereum.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
                   .then(() => window.location.reload())
@@ -1480,9 +1489,11 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx })
 
       {/* 调用弹窗 */}
       {callModal && (
+        // ★ 面板限高 + 内部滚动（与用户端弹窗同一写法）：小屏 / 投影仪（如 1366×768）下弹窗高于视口时，
+        //   底部【确认调用并托管】仍能滚到，避免出现「按钮在屏幕外点不到」而中断演示
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setCallModal(null)} />
-          <div className="relative w-full max-w-sm bg-white shadow-xl rounded-3xl p-8 animate-fade-in">
+          <div className="relative w-full max-w-sm max-h-[85vh] overflow-y-auto bg-white shadow-xl rounded-3xl p-8 animate-fade-in">
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-bold text-slate-900">调用数据</h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-600">已授权 · 立即扣款</span>
@@ -1586,9 +1597,10 @@ export default function EnterpriseDashboard({ web3, onNotice, onBlocked, onTx })
 
       {/* 发起授权申请弹窗 */}
       {applyModal && (
+        // ★ 同「调用弹窗」：面板限高 + 内部滚动，保证小屏下【提交申请】始终可达
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setApplyModal(null)} />
-          <div className="relative w-full max-w-sm bg-white shadow-xl rounded-3xl p-8 animate-fade-in">
+          <div className="relative w-full max-w-sm max-h-[85vh] overflow-y-auto bg-white shadow-xl rounded-3xl p-8 animate-fade-in">
             <div className="flex items-center gap-2">
               <h3 className="text-xl font-bold text-slate-900">申请调用授权</h3>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">不扣款 · 待审批</span>

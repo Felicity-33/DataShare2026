@@ -13,6 +13,8 @@
 //   - 中央工作区随侧栏展开自动收窄（ml-72 ⇄ ml-20），由各工作台 main 实现。
 // ============================================================
 import { PanelLeftClose, PanelLeftOpen, LogOut, Settings, BookOpen } from 'lucide-react';
+import { ACTIVE_NETWORK } from '../config.js';
+import { SIM_CHAIN_ID } from '../sim/mockChain.js';
 
 export default function Sidebar({
   title = '工作台', items = [], activeKey, onChange, collapsed, onToggle,
@@ -22,10 +24,14 @@ export default function Sidebar({
   onOpenSettings,      // ★ 打开设置弹窗
   onOpenHelp,          // ★ 打开使用说明 / 疑问处
   blockNumber = null,  // ★ 实时区块高度（体现区块链特性）
-  chainId = 1337,
+  isSim = false,       // ★ 演示模式：状态卡显示模拟链标识（ChainID 6001）
+  chainId,             // ★ 不传时按模式自动取（演示 6001 / 链上取当前网络配置）
   contractVersion = '',  // ★ 链上合约版本
   versionOk = true       // ★ 版本校验结果
 }) {
+  // 网络标识与链 ID 按模式解析（演示模式不再误显 Ganache 的 1337）
+  const netLabel = isSim ? '演示模拟链' : ACTIVE_NETWORK.label;
+  const netChainId = chainId ?? (isSim ? SIM_CHAIN_ID : ACTIVE_NETWORK.chainId);
   return (
     <aside
       className={`fixed left-4 top-4 bottom-4 z-30 flex flex-col overflow-hidden
@@ -106,8 +112,8 @@ export default function Sidebar({
         <div
           className={`px-3.5 py-3 rounded-2xl bg-white/[0.04] border border-white/[0.06] ${collapsed ? 'flex justify-center' : ''}`}
           title={collapsed
-            ? `已连接 Ganache · 区块 #${blockNumber ?? '—'} · 合约 v${contractVersion || '—'} · ChainID ${chainId}`
-            : `已连接 Ganache · ChainID ${chainId} · 合约 v${contractVersion || '—'}`}
+            ? `已连接 ${netLabel} · 区块 #${blockNumber ?? '—'} · 合约 v${contractVersion || '—'} · ChainID ${netChainId}`
+            : `已连接 ${netLabel} · ChainID ${netChainId} · 合约 v${contractVersion || '—'}`}
         >
           <div className={`flex items-center ${collapsed ? '' : 'gap-2'} `}>
             <span className="relative flex w-2 h-2 shrink-0">
@@ -130,7 +136,7 @@ export default function Sidebar({
               </div>
               <div className="mt-1 flex items-center justify-between">
                 <span className="text-[10px] text-slate-500">ChainID</span>
-                <span className="text-[10px] font-mono text-slate-300">{chainId}</span>
+                <span className="text-[10px] font-mono text-slate-300">{netChainId}</span>
               </div>
             </>
           )}

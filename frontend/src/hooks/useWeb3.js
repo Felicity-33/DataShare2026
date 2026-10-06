@@ -11,7 +11,7 @@
 // ============================================================
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
-import { DataShareABI, CONTRACT_ADDRESS, GANACHE_CHAIN_ID, GANACHE_RPC_URL, EXPECTED_CONTRACT_VERSION, emitGlobalError } from '../config.js';
+import { DataShareABI, CONTRACT_ADDRESS, ACTIVE_NETWORK, EXPECTED_CONTRACT_VERSION, emitGlobalError } from '../config.js';
 
 /**
  * 全局 Web3 Hook
@@ -54,22 +54,31 @@ export function useWeb3({ onRevenue, onAuthRequest, onAuthResult, onDisputeRaise
     }
   }, []);
 
-  // 确保 MetaMask 已切换到 Ganache 网络（自动切换/添加 + 合约可达性校验）
-  const ensureGanache = useCallback(async () => {
+  // 确保钱包已切换到目标网络（由 ACTIVE_NETWORK 决定：本地 Ganache / Sepolia 测试网）
+  // + 合约可达性校验，绝不让用户静默进入一个坏掉的工作台
+  const ensureNetwork = useCallback(async () => {
     if (!window.ethereum) throw new Error('未检测到 MetaMask，请先安装并开启小狐狸插件');
-    // 尝试切换到 Ganache（chainId 0x539 = 1337）
+    // ★ Sepolia 目标但未配置合约地址（阶段二部署前的保护）：直接给出明确指引
+    if (!CONTRACT_ADDRESS) {
+      throw new Error(
+        `尚未配置 ${ACTIVE_NETWORK.label} 的合约地址：` +
+        '请先完成合约部署，并把地址写入 frontend/.env 的 VITE_SEPOLIA_CONTRACT_ADDRESS 后重新构建。'
+      );
+    }
+    const net = ACTIVE_NETWORK;
+    // 尝试切换到目标网络
     const trySwitch = () => window.ethereum.request({
       method: 'wallet_switchEthereumChain',
-      params: [{ chainId: '0x539' }]
+      params: [{ chainId: net.hexChainId }]
     });
-    // 添加本项目的 Ganache 网络定义（RPC 127.0.0.1:7545）
+    // 目标网络定义（本地 Ganache 需手动添加；Sepolia 钱包通常自带，添加请求会被自动跳过）
     const tryAdd = () => window.ethereum.request({
       method: 'wallet_addEthereumChain',
       params: [{
-        chainId: '0x539',
-        chainName: 'Ganache 本地测试网',
+        chainId: net.hexChainId,
+        chainName: net.label,
         nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
-        rpcUrls: [GANACHE_RPC_URL]
+        ...(net.rpcUrl ? { rpcUrls: [net.rpcUrl] } : {})
       }]
     });
     try {
@@ -80,17 +89,16 @@ export function useWeb3({ onRevenue, onAuthRequest, onAuthResult, onDisputeRaise
         await tryAdd();
         await trySwitch();
       } else if (err && err.code === 4001) {
-        throw new Error('您拒绝了网络切换请求，请在 MetaMask 中手动切到「Ganache 本地测试网」后重试');
+        throw new Error(`您拒绝了网络切换请求，请在 MetaMask 中手动切换到「${net.label}」后重试`);
       } else {
         throw err;
       }
     }
     // ★ 关键校验（真实踩坑）：ChainID 相同 ≠ 网络正确 ——
-    //   MetaMask 自带「Localhost 8545」与本项目 Ganache(7545) 的 ChainID 都是 1337，
+    //   例如 MetaMask 自带「Localhost 8545」与本项目 Ganache(7545) 的 ChainID 都是 1337，
     //   上面的 switch 会因「已在 0x539」被静默跳过，钱包实际仍挂在连不上链的 8545 上，
     //   后续所有读写全部失败，表现为连接卡死 / 数据全空。
-    //   这里用钱包当前网络试读链上合约，读不到就给出可操作的中文指引，
-    //   绝不让用户静默进入一个坏掉的工作台。
+    //   这里用钱包当前网络试读链上合约，读不到就给出可操作的中文指引。
     try {
       const probe = new ethers.Contract(
         CONTRACT_ADDRESS,
@@ -99,12 +107,13 @@ export function useWeb3({ onRevenue, onAuthRequest, onAuthResult, onDisputeRaise
       );
       await probe.CONTRACT_VERSION();
     } catch {
-      throw new Error(
-        '钱包当前网络读不到链上合约。两种可能：' +
-        '① 钱包挂在 ChainID 同为 1337 但 RPC 不是 http://127.0.0.1:7545 的网络（如 MetaMask 自带的 Localhost 8545），' +
-        '请在 MetaMask 网络列表手动切换到「Ganache 本地测试网」后重新连接；' +
-        '② Ganache 被重置导致合约不存在，请重新执行 npm run deploy 并更新 frontend/src/config.js 的合约地址。'
-      );
+      const localHint = net.key === 'ganache'
+        ? '① 钱包挂在 ChainID 同为 1337 但 RPC 不是 ' + net.rpcUrl + ' 的网络（如 MetaMask 自带的 Localhost 8545），' +
+          '请在 MetaMask 网络列表手动切换到「' + net.label + '」后重新连接；' +
+          '② Ganache 被重置导致合约不存在，请重新执行 npm run deploy 并更新 frontend/src/config.js 的合约地址。'
+        : '① 钱包未连接到「' + net.label + '」，请在 MetaMask 网络列表手动切换后重新连接；' +
+          '② 合约地址配置有误或尚未部署，请核对 frontend/.env 的 VITE_SEPOLIA_CONTRACT_ADDRESS。';
+      throw new Error(`钱包当前网络读不到链上合约。两种可能：${localHint}`);
     }
   }, []);
 
@@ -116,7 +125,7 @@ export function useWeb3({ onRevenue, onAuthRequest, onAuthResult, onDisputeRaise
     const addr = await s.getAddress();
     const c = new ethers.Contract(CONTRACT_ADDRESS, DataShareABI, s);
     const net = await prov.getNetwork();
-    const ok = net.chainId === BigInt(GANACHE_CHAIN_ID);
+    const ok = net.chainId === BigInt(ACTIVE_NETWORK.chainId);
 
     setProvider(prov);
     setSigner(s);
@@ -144,8 +153,8 @@ export function useWeb3({ onRevenue, onAuthRequest, onAuthResult, onDisputeRaise
     setConnecting(true);
     try {
       if (!window.ethereum) throw new Error('未检测到 MetaMask，请先安装小狐狸插件后刷新页面');
-      // 1. 确保切换到 Ganache 网络
-      await ensureGanache();
+      // 1. 确保切换到目标网络（本地 Ganache / Sepolia）
+      await ensureNetwork();
       // 2. 请求连接账户
       await window.ethereum.request({ method: 'eth_requestAccounts' });
       // 3. 初始化 provider / 合约
@@ -159,7 +168,7 @@ export function useWeb3({ onRevenue, onAuthRequest, onAuthResult, onDisputeRaise
     } finally {
       setConnecting(false);
     }
-  }, [ensureGanache, init]);
+  }, [ensureNetwork, init]);
 
   // 刷新当前账户角色（角色自助注册后调用）
   const refreshRole = useCallback(async () => {
@@ -241,7 +250,10 @@ export function useWeb3({ onRevenue, onAuthRequest, onAuthResult, onDisputeRaise
     } catch (e) {
       console.error('拉取链上事件失败', e);
       // ★ 静默失败会让用户误以为"数据没上链"——同步失败必须进入全局异常通道给出排查指引
-      emitGlobalError('链上数据同步失败：请确认 Ganache 正在 7545 端口运行，且 MetaMask 网络指向 7545（ChainID 1337），然后刷新页面');
+      //   文案按当前网络参数化（本地 Ganache / Sepolia 测试网）
+      emitGlobalError(ACTIVE_NETWORK.key === 'ganache'
+        ? '链上数据同步失败：请确认 Ganache 正在 7545 端口运行，且 MetaMask 网络指向 7545（ChainID 1337），然后刷新页面'
+        : `链上数据同步失败：请确认钱包已连接 ${ACTIVE_NETWORK.label}（ChainID ${ACTIVE_NETWORK.chainId}），然后刷新页面`);
       return empty;
     }
   }, [contract, provider]);
@@ -537,13 +549,19 @@ export async function buildAllCharts(contract, account) {
   const userRevenueData = days.map(({ key, label }) => ({ date: label, 收益: userDaily[key] || 0 }));
 
   // 2. 用户端饼图：按字段名聚合当前用户各字段被调用次数
+  // ★ 口径必须与概览卡片「数据被调用次数」完全一致（均取链上 field.callCount 累计值），
+  //   不能用 RevenueDistributed 事件条数代替 —— 一次调用可能因分账产生多条事件，
+  //   或历史数据只有字段状态而无对应事件，否则会出现「卡片 5 次 / 饼图 2 次」的自相矛盾。
   const fieldCounter = {};
-  for (const e of events.revenue) {
-    if (e.args.user.toLowerCase() !== me) continue;
-    const fid = e.args.fieldId.toString();
-    const f = await contract.fields(fid); // 从链上读取字段名
-    fieldCounter[f.name] = (fieldCounter[f.name] || 0) + 1;
-  }
+  try {
+    const total = Number(await contract.getFieldsCount());
+    for (let i = 0; i < total; i++) {
+      const f = await contract.fields(i);          // 从链上读取字段详情（含累计调用次数）
+      if (String(f.owner).toLowerCase() !== me) continue;
+      const calls = Number(f.callCount);
+      if (calls > 0) fieldCounter[f.name] = (fieldCounter[f.name] || 0) + calls;
+    }
+  } catch { /* 旧版合约无 getFieldsCount 时降级为空饼图，不阻断其它图表 */ }
   const userPieData = Object.entries(fieldCounter).map(([name, value]) => ({ name, value }));
 
   // 3. 企业端柱状图：按天聚合属于当前企业的充值（DepositMade）与消耗（RevenueDistributed）

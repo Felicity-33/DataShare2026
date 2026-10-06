@@ -20,11 +20,11 @@ import {
 } from 'lucide-react';
 import {
   shortAddr, shortHash, fmtEth, fmtTime, fmtCountdown, parseTxError, DEMO_ENTERPRISE_ADDRESS, emitGlobalError,
-  syncChainClock, loadAllData,
+  syncChainClock, loadAllData, ACTIVE_NETWORK,
 } from '../config.js';
 import { authorizationTips } from '../ai.js';
 // ★ 确权所需的零知识证明：在浏览器本地生成，权属密钥不出本机
-import { getOwnershipSecret, makeOwnershipProof } from '../zk.js';
+import { getOwnershipSecret, makeOwnershipProof, makeDemoProof } from '../zk.js';
 import { buildAllCharts, useChainEvents, useBlockNumber, useChainNow } from '../hooks/useWeb3.js';
 // ★ 通知中心（v4.6 苹果精简版）：只推核心第三方事件（待审批 / 收益汇总 / 裁决），
 //   点击直达功能页；markRead 用于自主审批后闭合对应待办红点
@@ -51,8 +51,10 @@ const NAV = [
   { key: 'proofs', label: '取用凭证', icon: ShieldCheck }
 ];
 
+// ★ 字段分类即链下数据文件标识（dataRef）：每个分类都对应 public/data/<分类>.json。
+//   故意不提供「不限/自定义」选项 —— 那样确权出来的字段没有链下数据文件，
+//   企业调用时会因交付摘要为空而被拦下，演示时看着像故障。分类必须落在真实数据集上。
 const FIELD_CATEGORY_OPTIONS = [
-  '不限',
   '消费偏好', '出行习惯', '购物偏好', '运动健康', '兴趣娱乐', '阅读学习', '饮食口味',
   '收入水平', '教育背景', '职业信息', '社交活跃', '设备偏好',
   '金融理财', '保险健康', '母婴育儿', '宠物生活', '汽车出行',
@@ -70,7 +72,7 @@ function Empty({ text }) {
   );
 }
 
-export default function UserDashboard({ web3, onNotice, onTx }) {
+export default function UserDashboard({ web3, onNotice, onTx, mode, onToggleMode }) {
   const { contract, account } = web3;
   const me = account?.toLowerCase();
 
@@ -261,8 +263,10 @@ export default function UserDashboard({ web3, onNotice, onTx }) {
       }
     } catch (e) {
       console.error('加载用户数据失败', e);
-      // ★ 同步失败不能静默——进入全局异常通道，避免用户误以为数据没上链
-      emitGlobalError('用户数据同步失败：请确认 Ganache（7545）与 MetaMask 网络正常后刷新页面');
+      // ★ 同步失败不能静默——进入全局异常通道；文案按运行模式分支（模拟模式不提 Ganache）
+      emitGlobalError(web3.isSim
+        ? '演示数据同步失败：请刷新页面恢复；若仍异常，请在右上角设置中重置演示数据'
+        : `用户数据同步失败：请确认钱包已连接 ${ACTIVE_NETWORK.label}（本地演示需 Ganache 在 7545 端口运行）后刷新页面`);
     }
   }, [contract, account, me, entAddr]);
 
@@ -344,10 +348,14 @@ export default function UserDashboard({ web3, onNotice, onTx }) {
 
     await runTx('register', async () => {
       // ★ 第一步：在浏览器本地生成 ZK 权属证明（证明「我掌握该数据的权属密钥」）
-      //   权属密钥只存在于本机浏览器、绝不上链；证明里的 owner 必须等于当前账户
+      //   权属密钥只存在于本机浏览器、绝不上链；证明里的 owner 必须等于当前账户。
+      //   演示模式：模拟合约不执行 Groth16 验证，用同形演示证明秒出且永不失败；
+      //   链上模式：真实生成 Groth16 证明（snarkjs），安全性与真实链完全一致。
       setProofStage('① 正在生成零知识证明...');
       const secret = getOwnershipSecret(account);
-      const pf = await makeOwnershipProof(secret, account);
+      const pf = web3.isSim
+        ? makeDemoProof(secret, account)
+        : await makeOwnershipProof(secret, account);
 
       // ★ 第二步：字段名 + 权属证明 一起提交上链
       setProofStage('② 证明已生成，等待钱包确认...');
@@ -480,6 +488,8 @@ export default function UserDashboard({ web3, onNotice, onTx }) {
 
   // 断开钱包连接（侧边栏与顶部账号菜单共用）
   const handleLogout = () => {
+    // 演示模式：没有钱包权限可撤销，直接断开模拟连接并刷新（刷新后回到首页未登录态）
+    if (web3.isSim) { web3.disconnect(); window.location.reload(); return; }
     if (window.ethereum) {
       window.ethereum.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
         .then(() => window.location.reload())
@@ -505,6 +515,7 @@ export default function UserDashboard({ web3, onNotice, onTx }) {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenHelp={() => setHelpOpen(true)}
         blockNumber={blockNumber}
+        isSim={web3.isSim}
         contractVersion={web3.contractVersion}
         versionOk={web3.versionOk}
       />
@@ -519,6 +530,8 @@ export default function UserDashboard({ web3, onNotice, onTx }) {
             title="用户工作台"
             account={account}
             role="user"
+            mode={mode}
+            onToggleMode={onToggleMode}
             onOpenLogin={() => { console.log('请求登录'); }}
             blockNumber={blockNumber}
             onSwitchAccount={web3.switchAccount}

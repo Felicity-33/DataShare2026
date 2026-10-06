@@ -1,8 +1,9 @@
 // ============================================================
-// DataShare 部署脚本（Ethers.js v6 语法，部署到本地 Ganache）
+// DataShare 部署脚本（Ethers.js v6 语法，支持 Ganache / Sepolia 双目标）
 // ------------------------------------------------------------
 // 运行命令：
-//   npx hardhat run scripts/deploy.js --network ganache
+//   本地：npm run deploy（等价于 hardhat run scripts/deploy.js --network ganache）
+//   线上：npm run deploy:sepolia（前置：根目录 .env 配置 SEPOLIA_PRIVATE_KEY）
 //
 // v4.4 部署内容（v4.4 变更：争议窗口 60 秒 → 600 秒，修复企业申诉因窗口过短无法发起的问题）：
 //   1. 部署 Groth16 权属验证器（ZkVerifier.sol，由 scripts/build-zk.cjs 生成）
@@ -11,14 +12,62 @@
 //   4. 演示账号用**真实的 ZK 权属证明**完成确权（每字段一枚证明）
 //   5. 预授权一条，方便直接演示「调用」流程
 //
-// 部署完成后，把 DataShare 的合约地址填入 frontend/src/config.js 的 CONTRACT_ADDRESS。
+// Sepolia 分支差异（线上评审）：钱包只有部署者一枚私钥，六个演示账户不可用，
+//   因此仅部署合约 + 部署者以「演示用户」身份确权两个数据字段（上线即有内容可看）；
+//   角色（用户/企业/监管）由评委在前端「选择你的链上角色」自助注册——这本身就是产品交互。
+//
+// 部署完成后，Sepolia 合约地址填入 frontend/.env 的 VITE_SEPOLIA_CONTRACT_ADDRESS。
 //
 // 前置条件：先跑一次 `node scripts/build-zk.cjs` 生成电路产物（wasm / zkey / 验证器）。
 // ============================================================
 const hre = require("hardhat");
 const { deploySystem, registerFieldWithZk, initZk } = require("./lib/zk.cjs");
 
+// Sepolia 精简部署：零私钥配置（hardhat.config 自动用演示助记词派生部署账户），
+// 合约上线即含 2 个已确权数据字段。唯一前置：该账户已从水龙头领取测试 ETH。
+async function deploySepolia() {
+  const [deployer] = await hre.ethers.getSigners();
+  if (!deployer || !deployer.address) {
+    throw new Error("未读到部署账户：请检查 hardhat.config.js 的 sepolia.accounts 配置");
+  }
+
+  console.log("================== DataShare v4.4 Sepolia 部署开始 ==================");
+  console.log("部署账户:", deployer.address);
+  const balance = await hre.ethers.provider.getBalance(deployer.address);
+  console.log("账户余额:", hre.ethers.formatEther(balance), "ETH");
+  if (balance < hre.ethers.parseEther("0.1")) {
+    throw new Error("测试 ETH 不足（部署约需 0.1 ~ 0.3 ETH），请先到 Sepolia 水龙头领取测试 ETH 后重试");
+  }
+
+  // 预热 ZK 并部署验证器 + 主合约（平台服务费收款地址 = 部署者）
+  await initZk();
+  const { verifier, dv } = await deploySystem(deployer.address);
+  const verifierAddress = await verifier.getAddress();
+  const contractAddress = await dv.getAddress();
+  console.log("Groth16 验证器地址:", verifierAddress);
+  console.log("DataShare 合约地址:", contractAddress);
+
+  // 部署者注册为用户并确权两个数据字段（真实 Groth16 证明，上线即可浏览）
+  await (await dv.connect(deployer).registerAsUser()).wait();
+  console.log("部署者已注册为演示用户");
+  console.log("\n>>> 开始 ZK 确权（每个字段生成一枚 Groth16 证明）");
+  await registerFieldWithZk(dv, deployer, "消费偏好", 1000001n, "消费偏好");
+  await registerFieldWithZk(dv, deployer, "出行习惯", 1000002n, "出行习惯");
+  console.log("已确权字段：消费偏好(0)、出行习惯(1)");
+
+  console.log("\n================== Sepolia 部署完成 ==================");
+  console.log("");
+  console.log("【前端配置提醒】请将下面的地址写入 frontend/.env 后重新构建发布：");
+  console.log("  VITE_SEPOLIA_CONTRACT_ADDRESS=" + contractAddress);
+  console.log("");
+  console.log("【链上查看】https://sepolia.etherscan.io/address/" + contractAddress);
+  console.log("【角色说明】用户/企业/监管角色由各钱包地址在前端自助注册（合约 AccessControl 自助注册）");
+}
+
 async function main() {
+  // Sepolia 走单私钥精简分支；其余网络（ganache 等）走六账户完整演示分支
+  if (hre.network.name === "sepolia") return deploySepolia();
+
   // 账户顺序与 MetaMask 导入后的顺序一致：
   //   0 = 部署者(同时作为平台收款地址)  1 = 演示用户(用户A)  2 = 演示企业
   //   3 = 监管   4/5 = 用户B/用户C

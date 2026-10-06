@@ -14,17 +14,17 @@
 //     点「裁决」先阅说明书并勾选确认后才发起链上裁决交易，说明书自动存档并并入审计报告
 // 权限：裁决与失信标记为唯一写操作，其余只读审计
 // ============================================================
-import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
 } from 'recharts';
 import {
   Globe, FileText, AlertTriangle, Activity, TrendingUp, Database as DatabaseIcon,
-  Scale, ShieldCheck, Download, Search, Sparkles,
+  Scale, ShieldCheck, Download, Search, Sparkles, RefreshCw,
   ChevronDown, ChevronUp, FileCheck, Gavel
 } from 'lucide-react';
-import { shortAddr, shortHash, fmtEth, fmtTime, parseTxError, loadAllData, emitGlobalError } from '../config.js';
+import { shortAddr, shortHash, fmtEth, fmtTime, parseTxError, loadAllData, emitGlobalError, ACTIVE_NETWORK } from '../config.js';
 import { auditSummary, AI_DISCLAIMER } from '../ai.js';
 import { buildAllCharts, useChainEvents, useBlockNumber } from '../hooks/useWeb3.js';
 // ★ 合规依据库（v4.5）：裁决说明书的「依据说明」数据源（模拟引用，不具真实法律效力）
@@ -37,10 +37,12 @@ import {
 import {
   pushNotifications, nfDisputeRaised, nfBlockedDigest, markRead,
 } from '../notifications.js';
-import {
-  buildAuditReportMarkdown, buildAuditReportHTML,
+import { buildAuditReportMarkdown, buildAuditReportHTML,
   downloadTextFile, reportFileName, reportFileNameHtml
 } from '../auditReport.js';
+// ★ 审计报告的链环境标识：模拟模式需展示「演示模拟链 / 模拟合约地址」，
+//   与链上模式的 Ganache 网络区分，避免报告在两种模式下写成同一条链
+import { SIM_CHAIN_ID, SIM_CONTRACT_ADDRESS } from '../sim/mockChain.js';
 import Sidebar from './Sidebar';
 import SettingsModal from './SettingsModal';
 import HelpModal from './HelpModal';
@@ -301,7 +303,7 @@ function DateTimePicker({ value, onChange }) {
   );
 }
 
-export default function RegulatorDashboard({ web3, onNotice, onTx }) {
+export default function RegulatorDashboard({ web3, onNotice, onTx, mode, onToggleMode }) {
   const { contract, account } = web3;
 
   const [tab, setTab] = useState('overview');
@@ -327,6 +329,7 @@ export default function RegulatorDashboard({ web3, onNotice, onTx }) {
   const [auditLogs, setAuditLogs] = useState([]);
   const [blocked, setBlocked] = useState([]);
   const [selectedLog, setSelectedLog] = useState(null);
+  const [lastSync, setLastSync] = useState(null);   // ★ 最后一次链上同步时间（异常监控卡片展示）
 
   const [auditType, setAuditType] = useState('全部');
   const [auditTimeMode, setAuditTimeMode] = useState('全部');
@@ -520,14 +523,34 @@ export default function RegulatorDashboard({ web3, onNotice, onTx }) {
       } catch (e) {
         console.error('通知同步失败', e); // 通知失败不影响主数据加载
       }
+
+      setLastSync(Date.now()); // ★ 全量同步完成，异常监控卡片显示「最后同步」时刻
     } catch (e) {
       console.error('加载监管数据失败', e);
-      // ★ 同步失败不能静默——进入全局异常通道，避免用户误以为数据没上链
-      emitGlobalError('监管数据同步失败：请确认 Ganache（7545）与 MetaMask 网络正常后刷新页面');
+      // ★ 同步失败不能静默——进入全局异常通道；文案按运行模式分支（模拟模式不提 Ganache）
+      emitGlobalError(web3.isSim
+        ? '演示数据同步失败：请刷新页面恢复；若仍异常，请在右上角设置中重置演示数据'
+        : `监管数据同步失败：请确认钱包已连接 ${ACTIVE_NETWORK.label}（本地演示需 Ganache 在 7545 端口运行）后刷新页面`);
     }
   }, [contract]);
 
   useEffect(() => { load(); }, [load, web3.eventsVersion]);
+
+  // ============================================================
+  // ★ 异常监控同步兜底（出块即刷新）：
+  //   事件自动刷新依赖 MetaMask 的日志过滤器（eth_getFilterChanges），
+  //   长时间演示中过滤器可能被钱包 / 浏览器静默丢弃，导致拦截记录不再上榜、
+  //   只能手动刷新页面。这里改用已有的区块高度轮询（3 秒）做第二通道：
+  //   Ganache 空闲不出块、出块即代表发生了交易 → 强制全量刷新，
+  //   不依赖事件订阅的存活，任何拦截都会在数秒内出现在异常监控。
+  // ============================================================
+  const seenBlockRef = useRef(null);
+  useEffect(() => {
+    if (blockNumber === null || blockNumber === seenBlockRef.current) return;
+    const firstRead = seenBlockRef.current === null;
+    seenBlockRef.current = blockNumber;
+    if (!firstRead) load(); // 首次读到高度时挂载流程已触发 load()，跳过避免重复
+  }, [blockNumber, load]);
 
   // ★ 生成并下载审计报告（纯前端，无后端依赖）
   //   format = 'html' → 图表化 HTML（可打印 / 另存为 PDF）  'md' → Markdown 纯文本
@@ -543,6 +566,14 @@ export default function RegulatorDashboard({ web3, onNotice, onTx }) {
           stdCall: chainInfo.stdCall,
           stdDay: chainInfo.stdDay,
         },
+        // ★ 链环境：模拟模式显示演示模拟链与模拟合约地址，链上模式交给报告默认值（ACTIVE_NETWORK）
+        network: web3.isSim
+          ? {
+            label: '演示模拟链', chainId: SIM_CHAIN_ID,
+            rpcUrl: '浏览器内模拟链（无真实 RPC 节点）',
+            contractAddress: SIM_CONTRACT_ADDRESS,
+          }
+          : undefined,
         stats,
         settlement,
         escrows: allEscrows,
@@ -609,7 +640,7 @@ export default function RegulatorDashboard({ web3, onNotice, onTx }) {
     // ① 事实认定：托管创建 → 交付存证 → 挑战期内申诉 → 当前裁决状态
     const facts = [
       { time: fmtTime(d.ts), text: `托管单 #${d.escrowId} 创建：数据所有者 ${shortAddr(d.user)} 将字段「${d.fieldName}」托管上链，托管金额 ${fmtEth(d.amount)} ETH 由合约锁定。` },
-      { time: fmtTime(d.ts), text: `交付凭证生成并存证：deliveryHash = ${shortHash(d.deliveryHash)}（原始文件不上链、不可下载，仅存 SHA-256 摘要）。` },
+      { time: fmtTime(d.ts), text: `交付凭证生成并存证：deliveryHash = ${shortHash(d.deliveryHash)}（原始文件不上链、不可下载，仅存 keccak256 摘要）。` },
       d.disputeTs
         ? { time: fmtTime(d.disputeTs), text: `企业在挑战期内发起申诉，理由：「${d.disputeReason}」（申诉交易 ${shortHash(d.disputeTxHash) || '—'}）。` }
         : { time: '—', text: `企业发起申诉（历史数据无事件时间戳），理由：「${d.disputeReason}」。` },
@@ -753,6 +784,8 @@ export default function RegulatorDashboard({ web3, onNotice, onTx }) {
 
   // 断开钱包连接（侧边栏与顶部账号菜单共用）
   const handleLogout = () => {
+    // 演示模式：没有钱包权限可撤销，直接断开模拟连接并刷新（刷新后回到首页未登录态）
+    if (web3.isSim) { web3.disconnect(); window.location.reload(); return; }
     if (window.ethereum) {
       window.ethereum.request({ method: 'wallet_revokePermissions', params: [{ eth_accounts: {} }] })
         .then(() => window.location.reload())
@@ -785,6 +818,7 @@ export default function RegulatorDashboard({ web3, onNotice, onTx }) {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenHelp={() => setHelpOpen(true)}
         blockNumber={blockNumber}
+        isSim={web3.isSim}
         contractVersion={web3.contractVersion}
         versionOk={web3.versionOk}
       />
@@ -799,6 +833,8 @@ export default function RegulatorDashboard({ web3, onNotice, onTx }) {
             title="监管工作台"
             account={account}
             role="regulator"
+            mode={mode}
+            onToggleMode={onToggleMode}
             onOpenLogin={() => { console.log('请求登录'); }}
             blockNumber={blockNumber}
             onSwitchAccount={web3.switchAccount}
@@ -1385,7 +1421,21 @@ export default function RegulatorDashboard({ web3, onNotice, onTx }) {
                       重置
                     </button>
                   </div>
-                  <div className="mt-4 text-xs text-slate-400">共 {filteredAlerts.length} 条告警</div>
+                  {/* ★ 同步状态条：最后同步时间 + 手动刷新，演示时可即时确认「已与链上对齐」 */}
+                  <div className="mt-4 flex items-center justify-between">
+                    <div className="text-xs text-slate-400">
+                      共 {filteredAlerts.length} 条告警
+                      {lastSync && <span className="ml-2">· 链上同步于 {new Date(lastSync).toLocaleTimeString('zh-CN')}</span>}
+                    </div>
+                    <button
+                      onClick={() => load()}
+                      title="立即从链上重新拉取拦截记录"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[11px] font-medium text-slate-500 hover:text-cyan-600 hover:border-cyan-200 transition-colors"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      立即同步
+                    </button>
+                  </div>
                 </div>
 
                 {filteredAlerts.length === 0 ? <Empty text="暂无符合条件的异常记录" /> : (

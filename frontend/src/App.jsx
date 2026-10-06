@@ -7,9 +7,16 @@
 //   - 成功 Toast：底部弹起，绿底白字，z-[60]
 //   - 同一时间只保留一个最高优先级提示，3 秒自动消失
 // 链上事件：收益到账 / 授权申请 / 审批结果（由 useWeb3 统一监听）
+// ★ 双模式架构（v4.6）：
+//   - 模拟演示模式（默认）：免钱包、免本地链，评委打开即用，
+//     底层是 src/sim/mockChain.js 的浏览器内模拟合约（useSimWeb3）
+//   - 链上真实模式：连接 MetaMask 与 ACTIVE_NETWORK（本地 Ganache /
+//     Sepolia 测试网）交互，走 useWeb3 —— 两个 hook 无条件挂载后按
+//     模式取用（Hooks 不能条件调用），切模式时工作台整体重挂载
 // ============================================================
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useWeb3, useBlockNumber } from './hooks/useWeb3.js';
+import { useSimWeb3 } from './hooks/useSimWeb3.js';
 import { fmtEth, EXPECTED_CONTRACT_VERSION } from './config.js';
 import Background from './components/Background.jsx';
 import Header from './components/Header.jsx';
@@ -18,6 +25,9 @@ import ModalLogin from './components/ModalLogin.jsx';
 import UserDashboard from './components/UserDashboard.jsx';
 import EnterpriseDashboard from './components/EnterpriseDashboard.jsx';
 import RegulatorDashboard from './components/RegulatorDashboard.jsx';
+
+// 模式持久化 key：'sim'（模拟演示）/ 'chain'（链上真实）
+const MODE_KEY = 'ds_mode';
 
 export default function App() {
   // ---------------- 视图与登录状态 ----------------
@@ -41,10 +51,11 @@ export default function App() {
   }, []);
 
   // 展示提示：同一时间只弹一个最高优先级提示（后到的会覆盖先到的）
-  const showNotice = useCallback((type, text) => {
+  // duration 可选：默认 3 秒；合约拦截留痕这类需要讲解的横幅给更长时间（见 onBlocked）
+  const showNotice = useCallback((type, text, duration = 3000) => {
     setNotice({ type, text });
     clearTimeout(noticeTimer.current);
-    noticeTimer.current = setTimeout(() => setNotice(null), 3000); // 3 秒自动消失
+    noticeTimer.current = setTimeout(() => setNotice(null), duration);
   }, []);
 
   // ★ 统一异常入口：底层模块（useWeb3 同步失败等）通过 ds-global-error 事件上报，
@@ -55,12 +66,13 @@ export default function App() {
     return () => window.removeEventListener('ds-global-error', onGlobalError);
   }, [showNotice]);
 
-  // ---------------- Web3 与链上事件监听 ----------------
+  // ---------------- Web3 与链上事件监听（双模式） ----------------
   // liveTick：事件触发后 +1，通知各工作台刷新数据
   const [liveTick, setLiveTick] = useState(0);
-  const web3 = useWeb3({
+  // 两种模式共用同一套事件回调（业务提示完全一致）
+  const callbacks = useMemo(() => ({
     // 收益到账：用户端弹出绿色 Toast
-    onRevenue: ({ amount, enterprise }) => {
+    onRevenue: ({ amount }) => {
       showNotice('success', `企业调用您的数据，收益 +${fmtEth(amount)} ETH`);
       setLiveTick(t => t + 1);
     },
@@ -86,10 +98,45 @@ export default function App() {
         showNotice('success', '监管裁决：申诉成立，托管费用已退回企业押金池');
       }
     }
+  }), [showNotice]);
+
+  // ★ 两个 hook 都无条件挂载（Hooks 规则），按当前模式取用其一：
+  //   sim3 —— 模拟演示模式（默认，免钱包）；web3 —— 链上真实模式（MetaMask）
+  const web3 = useWeb3(callbacks);
+  const sim3 = useSimWeb3(callbacks);
+
+  // 当前模式：'sim' 模拟演示 | 'chain' 链上真实（持久化到 localStorage，刷新后保持）
+  const [mode, setMode] = useState(() => {
+    try { return localStorage.getItem(MODE_KEY) === 'chain' ? 'chain' : 'sim'; }
+    catch { return 'sim'; }
   });
-  const { account, role, connected, contract, registerRole, refreshRole, versionOk, contractVersion } = web3;
-  // ★ 实时区块高度：从 provider 轮询，用于顶栏 / 侧边栏 / 设置面板展示
-  const blockNumber = useBlockNumber(web3.provider);
+  const isSim = mode === 'sim';
+  const active = isSim ? sim3 : web3;
+  const { account, role, connected, contract, registerRole, refreshRole, versionOk, contractVersion } = active;
+
+  // ★ 实时区块高度：从当前模式的 provider 轮询，用于顶栏 / 侧边栏 / 设置面板展示
+  const blockNumber = useBlockNumber(active.provider);
+
+  // ---------------- 模式切换与演示入口 ----------------
+  // 切换模式：断开当前连接并回首页（工作台通过 key 重挂载，保证状态干净）
+  const toggleMode = useCallback(() => {
+    if (isSim) web3.disconnect(); else sim3.disconnect();
+    const next = isSim ? 'chain' : 'sim';
+    try { localStorage.setItem(MODE_KEY, next); } catch { /* 忽略 */ }
+    setMode(next);
+    setView('home');
+  }, [isSim, web3, sim3]);
+
+  // 一键进入演示模式（免钱包）：首页主入口 / 链上连接框兜底 / 角色页逃生通道共用
+  // ★ 必须先落回 sim 模式：若当前是 chain 模式，active=web3 未连接，
+  //   只切视图会出现「进入演示后页面空白」——入口必须保证模式与连接一致
+  const enterDemo = useCallback(async () => {
+    try { localStorage.setItem(MODE_KEY, 'sim'); } catch { /* 忽略 */ }
+    setMode('sim');
+    try { await sim3.connect(); } catch { /* 模拟连接不会失败，兜底静默 */ }
+    setLoginOpen(false);
+    setView('workbench');
+  }, [sim3]);
 
   // ---------------- 统一导航映射 ----------------
   // home / profile 直接切视图；user / enterprise / regulator 一律进入工作台，
@@ -148,15 +195,33 @@ export default function App() {
             </button>
           ))}
         </div>
+        {/* 演示模式兜底：角色注册是链上动作，没有环境时给一条逃生通道 */}
+        {mode === 'chain' && (
+          <button
+            onClick={enterDemo}
+            className="mt-5 text-xs text-slate-400 hover:text-cyan-600 transition-colors"
+          >
+            没有钱包环境？一键进入演示模式（免钱包）
+          </button>
+        )}
       </div>
     </div>
   );
 
   // ---------------- 工作台渲染（按角色分发） ----------------
+  // key={mode}：切换模式时强制重挂载工作台，杜绝两个数据源的状态串扰
   const renderWorkbench = () => {
     if (!connected) return null;
     if (role === 'none') return <RoleSelectCard />;
-    const common = { web3, onNotice: showNotice, liveTick, onTx: showTx };
+    const common = {
+      web3: active, onNotice: showNotice, liveTick, onTx: showTx,
+      // ★ 合约拦截专用通道（此前漏传，导致企业端「先存证再报错」的拦截原因无处显示）：
+      //   拦截原因由合约判定（企业无法伪造），用 6 秒红横幅展示，与左下角「已上链确认 区块 #N / 交易哈希」配套，
+      //   演示时可直接说明「错误自动留痕」。仅在链上留痕成功后触发，不影响正常调用。
+      onBlocked: (reason) => showNotice('error', `合约拦截：${reason}`, 6000),
+      mode, onToggleMode: toggleMode,   // 透传给工作台 Header：模式徽标 + 互切菜单项
+      key: `${role}-${mode}`,
+    };
     if (role === 'user') return <UserDashboard {...common} />;
     if (role === 'enterprise') return <EnterpriseDashboard {...common} />;
     if (role === 'regulator') return <RegulatorDashboard {...common} />;
@@ -173,13 +238,17 @@ export default function App() {
           进入角色工作台后隐藏，改由工作台自身的顶部导航栏承载灵动岛组件 */}
       {!inRoleWorkbench && (
         <Header
-          account={account}
+          // ★ 未连接时传 null：模拟模式的 account 是内置演示身份（恒非空），
+          //   若直接透传，首页未登录也会显示「已连接」胶囊，退出演示后无法回到登录态
+          account={connected ? account : null}
           role={role}
           view={view}
           blockNumber={blockNumber}
+          mode={mode}
+          onToggleMode={toggleMode}
           onOpenLogin={() => setLoginOpen(true)}
-          onLogout={() => { web3.disconnect(); setView('home'); }}
-          onSwitchAccount={web3.switchAccount}
+          onLogout={() => { active.disconnect(); setView('home'); }}
+          onSwitchAccount={active.switchAccount}
           onNavigate={goView}
         />
       )}
@@ -190,10 +259,11 @@ export default function App() {
         {view === 'workbench' && renderWorkbench()}
       </main>
 
-      {/* 连接钱包模态框（z-50） */}
+      {/* 连接钱包模态框（z-50）：仅链上模式入口（进入演示不弹窗） */}
       {loginOpen && (
         <ModalLogin
           web3={web3}
+          onEnterDemo={enterDemo}
           onClose={() => setLoginOpen(false)}
           onConnected={() => setView('workbench')}
         />

@@ -835,7 +835,7 @@ export default function RegulatorDashboard({ web3, onNotice, onTx, mode, onToggl
             role="regulator"
             mode={mode}
             onToggleMode={onToggleMode}
-            onOpenLogin={() => { console.log('请求登录'); }}
+            onOpenLogin={() => {}}
             blockNumber={blockNumber}
             onSwitchAccount={web3.switchAccount}
             onLogout={handleLogout}

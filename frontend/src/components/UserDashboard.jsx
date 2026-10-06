@@ -531,7 +531,7 @@ export default function UserDashboard({ web3, onNotice, onTx, mode, onToggleMode
             role="user"
             mode={mode}
             onToggleMode={onToggleMode}
-            onOpenLogin={() => { console.log('请求登录'); }}
+            onOpenLogin={() => {}}
             blockNumber={blockNumber}
             onSwitchAccount={web3.switchAccount}
             onLogout={handleLogout}
